@@ -4,7 +4,7 @@ import java.time.YearMonth;
 import java.util.*;
 public final class Ledger {
  public static final String IN="income", OUT="expense", MOVE="transfer";
- public static final long MAX=100000000000000L;
+ public static final long MAX=1000000000000L;
  public static final class Account {
   public final String id,name,type; public final long opening;
   public Account(String id,String name,String type,long opening){
