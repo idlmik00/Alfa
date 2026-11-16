@@ -136,7 +136,11 @@ public class MainActivity extends Activity {
   if(count>historyLimit)button(root,"Показать ещё",false,()->{historyLimit+=100;show();});
   space(root,12);button(root,"+  Добавить операцию",true,()->chooseType());
  }
- void chooseType(){new AlertDialog.Builder(this).setTitle("Тип операции").setItems(new String[]{"Доход","Расход","Перевод"},(d,i)->entryDialog(new String[]{Ledger.IN,Ledger.OUT,Ledger.MOVE}[i],null)).show();}
+ void chooseType(){
+  LinearLayout l=panel();AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Новая операция").setView(l).setNegativeButton("Отмена",null).create();
+  menu(l,"minus","Расход",null,()->{dialog.dismiss();entryDialog(Ledger.OUT,null);});menu(l,"plus","Доход",null,()->{dialog.dismiss();entryDialog(Ledger.IN,null);});menu(l,"transfer","Перевод",null,()->{dialog.dismiss();entryDialog(Ledger.MOVE,null);});
+  dialog.show();
+ }
  void entryRow(Ledger.Entry e){
   boolean transfer=Ledger.MOVE.equals(e.type), income=Ledger.IN.equals(e.type);LinearLayout h=horizontal();h.setPadding(0,dp(12),0,dp(12));h.setMinimumHeight(dp(66));
   h.addView(iconTile(transfer?"transfer":CategoryCatalog.icon(e.category),RED,24,44));
@@ -180,22 +184,44 @@ public class MainActivity extends Activity {
   if(!writable())return;LinearLayout l=panel();EditText name=field(l,"Название",old==null?"":old.name,false);Spinner type=spinner(l,"Тип",Arrays.asList(TYPES),old==null?0:Arrays.asList(TYPES).indexOf(old.type));EditText start=field(l,"Остаток до первой операции, ₽",old==null?"0":number(old.opening),true);space(l,7);label(l,"Начальный остаток не входит в доходы. Для долга можно указать отрицательную сумму.",12,MUTED,false);
   formDialog(old==null?"Добавить счёт":"Настроить счёт",l,old==null?null:"Удалить",()->new AlertDialog.Builder(this).setMessage("Удалить счёт без операций?").setNegativeButton("Отмена",null).setPositiveButton("Удалить",(d,w)->{try{ledger.removeAccount(old.id);save();show();}catch(Exception e){error(e);}}).show(),()->{ledger.put(new Ledger.Account(old==null?uid():old.id,value(name),TYPES[type.getSelectedItemPosition()],amount(value(start))));save();show();});
  }
- String category(String s,boolean income){s=s.toLowerCase(RU);if(income)return s.contains("зарплат")?"Зарплата":"Прочий доход";if(s.matches(".*(продукт|магазин|супермаркет|пятероч|пятёроч|магнит).*"))return "Продукты";if(s.matches(".*(такси|метро|азс|транспорт|автобус).*"))return "Транспорт";if(s.matches(".*(кафе|ресторан|кофе).*"))return "Кафе и рестораны";if(s.matches(".*(аптек|здоров).*"))return "Здоровье";return "Прочее";}
- void entryDialog(String kind,Ledger.Entry old){
-  if(!writable())return;if(ledger.accounts.isEmpty()){new AlertDialog.Builder(this).setTitle("Сначала создайте счёт").setMessage("Так приложение будет знать, где находятся деньги.").setNegativeButton("Отмена",null).setPositiveButton("Добавить",(d,w)->accountDialog(null)).show();return;}
-  boolean move=kind.equals(Ledger.MOVE),income=kind.equals(Ledger.IN);if(move&&ledger.accounts.size()<2){toast("Для перевода нужны как минимум два счёта");return;}
-  ArrayList<String> ids=new ArrayList<>(ledger.accounts.keySet()),names=new ArrayList<>();for(String id:ids)names.add(accountName(id)+" · "+ledger.accounts.get(id).type);
-  LinearLayout l=panel();int selected=Math.max(0,ids.indexOf(old==null?accountFilter:income?old.to:old.from));Spinner first=spinner(l,move?"Откуда":income?"Куда поступили деньги":"Откуда списаны деньги",names,selected);
-  Spinner second=move?spinner(l,"Куда",names,old==null?(selected+1)%ids.size():ids.indexOf(old.to)):null;
-  EditText sum=field(l,"Сумма, ₽",old==null?"":number(old.amount),true);
-  EditText cat=move?null:field(l,income?"Категория дохода (необязательно)":"Категория расхода (необязательно)",old==null?"":old.category,false);
-  EditText note=field(l,"Комментарий",old==null?"":old.note,false);
-  EditText date=field(l,"Дата (ГГГГ-ММ-ДД)",old==null?LocalDate.now().toString():old.date.toString(),false);
-  formDialog(old==null?(move?"Перевод":income?"Доход":"Расход"):"Изменить операцию",l,null,null,()->{
-   long n=amount(value(sum));String a=ids.get(first.getSelectedItemPosition()),other=move?ids.get(second.getSelectedItemPosition()):null,desc=value(note),c=move?"":value(cat);if(!move&&c.isEmpty())c=category(desc,income);
-   ledger.put(new Ledger.Entry(old==null?uid():old.id,kind,income?null:a,move?other:income?a:null,c,desc,LocalDate.parse(value(date)),n));save();show();
-  });
+ String category(String s,boolean income){s=s.toLowerCase(RU);if(income){if(s.contains("зарплат"))return "Зарплата";if(s.contains("кешбэк")||s.contains("кэшбэк"))return "Кешбэк";if(s.contains("преми"))return "Премия";if(s.contains("аванс"))return "Аванс";return "Прочий доход";}if(s.matches(".*(продукт|магазин|супермаркет|пятероч|пятёроч|магнит).*"))return "Продукты";if(s.matches(".*(такси|метро|азс|транспорт|автобус).*"))return "Транспорт";if(s.matches(".*(кафе|ресторан|кофе).*"))return "Кафе и рестораны";if(s.matches(".*(аптек|здоров).*"))return "Здоровье";if(s.matches(".*(жкх|аренд|электрич).*"))return "Жильё и ЖКХ";if(s.matches(".*(интернет|мобильн|связь).*"))return "Связь и интернет";return "Прочее";}
+ void categoryPicker(boolean income,String selected,java.util.function.Consumer<String> choose){
+  LinearLayout l=panel();AlertDialog d=new AlertDialog.Builder(this).setTitle(income?"Категория дохода":"Категория расхода").setView(dialogView(l)).setNegativeButton("Отмена",null).create();
+  Set<String> known=new LinkedHashSet<>();String[][] groups=income?CategoryCatalog.INCOME:CategoryCatalog.EXPENSE;
+  for(String[] group:groups){label(l,group[0],13,MUTED,true);space(l,8);for(int i=1;i<group.length;i++){final String name=group[i];known.add(name);menu(l,CategoryCatalog.icon(name),name,selected.equals(name)?"✓":null,()->{d.dismiss();choose.accept(name);});}space(l,8);}
+  Set<String> custom=new LinkedHashSet<>();for(Ledger.Entry e:ledger.entries.values())if((income?Ledger.IN:Ledger.OUT).equals(e.type)&&!known.contains(e.category))custom.add(e.category);if(!selected.isEmpty()&&!known.contains(selected))custom.add(selected);
+  if(!custom.isEmpty()){label(l,"Мои категории",13,MUTED,true);space(l,8);for(String name:custom)menu(l,CategoryCatalog.icon(name),name,name.equals(selected)?"✓":null,()->{d.dismiss();choose.accept(name);});}
+  button(l,"+  Своя категория",false,()->{d.dismiss();LinearLayout p=panel();EditText e=field(p,"Название","",false);formDialog("Своя категория",p,null,null,()->{String n=value(e);if(n.isEmpty()||n.length()>60)throw new IllegalArgumentException("Введите название до 60 символов");choose.accept(n);});});d.show();
  }
+ void entryDialog(String kind,Ledger.Entry old){
+  if(!writable())return;
+  if(ledger.accounts.isEmpty()){
+   new AlertDialog.Builder(this).setTitle("Добавьте первый счёт").setMessage("Выберите, где находятся деньги: карта, наличные или счёт.").setNegativeButton("Отмена",null).setPositiveButton("Добавить",(d,w)->accountDialog(null)).show();return;
+  }
+  final boolean move=kind.equals(Ledger.MOVE),income=kind.equals(Ledger.IN);
+  if(move&&ledger.accounts.size()<2){toast("Для перевода нужны два разных счёта");return;}
+  ArrayList<String> ids=new ArrayList<>(ledger.accounts.keySet()),names=new ArrayList<>();for(String id:ids){Ledger.Account ac=ledger.accounts.get(id);names.add(ac.name+" • "+(hidden?"••••":money(ledger.balance(id))));}
+  LinearLayout shell=col();shell.setBackgroundColor(BG);LinearLayout l=col();l.setPadding(dp(20),dp(18),dp(20),dp(24));
+  Dialog d=new Dialog(this);d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+  LinearLayout head=horizontal();head.setPadding(dp(14),dp(12),dp(14),dp(4));SvgIcon back=icon("back",MUTED,25);back.setContentDescription("Отмена");back.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);back.setOnClickListener(v->d.dismiss());head.addView(back,new LinearLayout.LayoutParams(dp(44),dp(48)));weight(head,text(old==null?(move?"Перевод":income?"Доход":"Расход"):"Изменить операцию",24,WHITE,true));shell.addView(head);
+  ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(l);shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+  LinearLayout amountCard=col();amountCard.setPadding(dp(18),dp(18),dp(18),dp(12));amountCard.setBackground(new BalanceArt());label(amountCard,"Сумма, ₽",14,0xffded0d0,false);space(amountCard,8);
+  EditText sum=new EditText(this);sum.setSingleLine(true);sum.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);sum.setTextSize(36);sum.setTextColor(WHITE);sum.setHintTextColor(0xffa08b8e);sum.setBackgroundColor(Color.TRANSPARENT);sum.setHint("0");sum.setText(old==null?"":number(old.amount));sum.setPadding(0,dp(6),0,dp(6));sum.setSelectAllOnFocus(true);amountCard.addView(sum);l.addView(amountCard);space(l,18);
+  int selected=Math.max(0,ids.indexOf(old==null?accountFilter:income?old.to:old.from));Spinner first=spinner(l,move?"Со счёта":income?"На счёт":"Счёт списания",names,selected);
+  Spinner second=move?spinner(l,"На счёт",names,old==null?(selected+1)%ids.size():ids.indexOf(old.to)):null;
+  final String[] categoryValue={old==null||move?"":old.category};
+  if(!move){space(l,14);label(l,"Категория",13,MUTED,false);space(l,8);LinearLayout catRow=horizontal();catRow.setPadding(dp(12),dp(8),dp(12),dp(8));catRow.setMinimumHeight(dp(58));catRow.setBackground(bg(CARD,16));FrameLayout tile=iconTile(CategoryCatalog.icon(categoryValue[0]),RED,23,40);catRow.addView(tile);TextView chosen=text(categoryValue[0].isEmpty()?"Выбрать категорию":categoryValue[0],16,WHITE,false);chosen.setPadding(dp(12),0,0,0);weight(catRow,chosen);catRow.addView(icon("chevron",MUTED,19),new LinearLayout.LayoutParams(dp(24),dp(36)));catRow.setOnClickListener(v->categoryPicker(income,categoryValue[0],name->{categoryValue[0]=name;chosen.setText(name);tile.removeAllViews();tile.addView(icon(CategoryCatalog.icon(name),RED,23),new FrameLayout.LayoutParams(-1,-1));}));l.addView(catRow);}
+  final LocalDate[] selectedDate={old==null?LocalDate.now():old.date};space(l,14);label(l,"Дата",13,MUTED,false);space(l,8);LinearLayout day=horizontal();day.setPadding(dp(12),dp(8),dp(12),dp(8));day.setMinimumHeight(dp(54));day.setBackground(bg(CARD,16));day.addView(iconTile("calendar",RED,23,38));TextView dateText=text(selectedDate[0].format(DateTimeFormatter.ofPattern("d MMMM yyyy",RU)),16,WHITE,false);dateText.setPadding(dp(12),0,0,0);weight(day,dateText);day.addView(icon("chevron",MUTED,19),new LinearLayout.LayoutParams(dp(24),dp(36)));day.setOnClickListener(v->{LocalDate current=selectedDate[0];DatePickerDialog picker=new DatePickerDialog(this,(p,y,m,dayOfMonth)->{selectedDate[0]=LocalDate.of(y,m+1,dayOfMonth);dateText.setText(selectedDate[0].format(DateTimeFormatter.ofPattern("d MMMM yyyy",RU)));},current.getYear(),current.getMonthValue()-1,current.getDayOfMonth());picker.getDatePicker().setMaxDate(System.currentTimeMillis());picker.show();});l.addView(day);
+  space(l,8);EditText note=field(l,"Комментарий (необязательно)",old==null?"":old.note,false);note.setHint(move?"Например, снятие наличных":"Например, покупка в магазине");space(l,14);if(move)label(l,"Перевод не увеличивает доходы или расходы. Комиссию банка добавьте отдельным расходом.",13,MUTED,false);
+  LinearLayout foot=col();foot.setPadding(dp(20),dp(8),dp(20),dp(14));button(foot,old==null?"Сохранить операцию":"Сохранить изменения",true,()->{try{
+   long n=amount(value(sum));if(n<=0)throw new IllegalArgumentException("Введите сумму больше нуля");
+   String a=ids.get(first.getSelectedItemPosition()),other=move?ids.get(second.getSelectedItemPosition()):null,desc=value(note),c=move?"":categoryValue[0];
+   if(!move&&c.isEmpty())throw new IllegalArgumentException("Выберите категорию");
+   ledger.put(new Ledger.Entry(old==null?uid():old.id,kind,income?null:a,move?other:income?a:null,c,desc,selectedDate[0],n));save();month=YearMonth.from(selectedDate[0]);d.dismiss();show();
+  }catch(Exception e){error(e);}});shell.addView(foot);
+  d.setContentView(shell);Window w=d.getWindow();if(w!=null){w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(BG));w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE|WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);if(secure)w.addFlags(WindowManager.LayoutParams.FLAG_SECURE);w.setStatusBarColor(BG);w.setNavigationBarColor(BG);}shell.setFocusableInTouchMode(true);shell.requestFocus();d.show();if(w!=null)w.setLayout(-1,-1);
+ }
+
  void chooseCategoryLimit(){if(!writable())return;LinkedHashSet<String> set=new LinkedHashSet<>(Arrays.asList(CATEGORIES));set.addAll(ledger.categories(month).keySet());ArrayList<String> list=new ArrayList<>(set);list.add("Своя категория");new AlertDialog.Builder(this).setTitle("Категория бюджета").setItems(list.toArray(new String[0]),(d,i)->{if(i==list.size()-1){LinearLayout l=panel();EditText e=field(l,"Название категории","",false);formDialog("Новая категория",l,null,null,()->{String c=value(e);if(c.isEmpty())throw new IllegalArgumentException("Введите название");l.post(()->limitDialog(c));});}else limitDialog(list.get(i));}).show();}
  void limitDialog(String category){if(!writable())return;LinearLayout l=panel();long lim=ledger.limit(month,category);EditText e=field(l,"Лимит в рублях (0 — убрать)",lim==0?"":number(lim),true);formDialog(category.isEmpty()?"Бюджет на "+monthName():category,l,null,null,()->{ledger.setLimit(month,category,amount(value(e)));save();show();});}
  void advice(){long out=ledger.sum(month,Ledger.OUT),in=ledger.sum(month,Ledger.IN),lim=ledger.limit(month,"");StringBuilder s=new StringBuilder("За "+monthName().toLowerCase(RU)+" учтено "+money(out)+" расходов.\n\n");if(lim==0)s.append("Задайте общий лимит, чтобы отслеживать бюджет. ");else if(out>lim)s.append("Бюджет превышен на "+money(out-lim)+". Проверьте необязательные траты. ");else{s.append("Осталось "+money(lim-out)+". ");if(month.equals(YearMonth.now()))s.append("До конца месяца можно расходовать не более "+money(ledger.daily(month,LocalDate.now()))+" в день по плану. ");}
