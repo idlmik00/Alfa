@@ -4,9 +4,10 @@ import android.app.*;
 import android.os.*;
 import android.content.*;
 import android.content.res.ColorStateList;
-import android.graphics.Color;
+import android.graphics.*;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.view.*;
 import android.widget.*;
@@ -21,10 +22,10 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 public class MainActivity extends Activity {
- static final int BG=0xff080809, CARD=0xff151517, LINE=0xff29292e, RED=0xffff353c, WHITE=0xfff7f7f8, MUTED=0xffa0a0a8;
+ static final int BG=0xff050506, CARD=0xff101011, LINE=0xff222224, RED=0xffff3038, WHITE=0xfff7f7f8, MUTED=0xff939399;
  static final Locale RU=new Locale("ru","RU");
  static final String[] TYPES={"Карта","Наличные","Счёт"};
- static final String[] CATEGORIES={"Продукты","Транспорт","Кафе и рестораны","Жильё и ЖКХ","Здоровье","Связь","Покупки","Развлечения","Прочее"};
+ static final String[] CATEGORIES=CategoryCatalog.names(false).toArray(new String[0]);
  Ledger ledger=new Ledger(); SharedPreferences prefs; LinearLayout root; YearMonth month=YearMonth.now();
  String page="home",accountFilter=null,importAccount=null; int historyLimit=100; boolean hidden,secure,storageLocked,loadFailed;
  @Override public void onCreate(Bundle saved){
@@ -63,33 +64,65 @@ public class MainActivity extends Activity {
  void button(LinearLayout l,String s,boolean filled,Runnable r){l.addView(action(s,filled,r),new LinearLayout.LayoutParams(-1,-2));space(l,10);}
  void pair(LinearLayout parent,TextView a,TextView b){LinearLayout h=horizontal();weight(h,a);View gap=new View(this);h.addView(gap,new LinearLayout.LayoutParams(dp(10),1));weight(h,b);parent.addView(h);}
  void heading(String s,String link,Runnable r){LinearLayout h=horizontal();weight(h,text(s,21,WHITE,true));if(link!=null){TextView x=text(link,15,RED,true);x.setPadding(dp(12),dp(12),0,dp(12));x.setOnClickListener(v->r.run());h.addView(x);}root.addView(h);space(root,12);}
- void menu(LinearLayout p,String icon,String title,String right,Runnable r){LinearLayout h=horizontal();h.setPadding(dp(14),dp(13),dp(14),dp(13));h.setBackground(bg(CARD,16));TextView i=text(icon,22,RED,true);i.setGravity(Gravity.CENTER);h.addView(i,new LinearLayout.LayoutParams(dp(38),dp(38)));LinearLayout c=col();c.setPadding(dp(12),0,dp(6),0);label(c,title,16,WHITE,true);weight(h,c);if(right!=null)h.addView(text(right,14,MUTED,false));h.addView(text("  ›",21,MUTED,false));h.setOnClickListener(v->r.run());p.addView(h);space(p,9);}
+ String menuIcon(String key){switch(key){case "▤":return "wallet";case "⇄":return "transfer";case "⇣":return "download";case "⇡":return "upload";case "↻":return "refresh";case "✦":return "star";default:return key;}}
+ SvgIcon icon(String key,int color,int size){return new SvgIcon(this,menuIcon(key),color,size);}
+ FrameLayout iconTile(String key,int color,int size,int tile){FrameLayout b=new FrameLayout(this);b.setBackground(bg(0xff151516,13));SvgIcon v=icon(key,color,size);b.addView(v,new FrameLayout.LayoutParams(-1,-1));b.setLayoutParams(new LinearLayout.LayoutParams(dp(tile),dp(tile)));return b;}
+ void menu(LinearLayout p,String key,String title,String right,Runnable r){
+  LinearLayout h=horizontal();h.setMinimumHeight(dp(62));h.setPadding(dp(12),dp(9),dp(12),dp(9));h.setBackground(border(CARD,17,0xff151516));
+  h.addView(iconTile(key,RED,25,44));TextView t=text(title,17,WHITE,false);t.setPadding(dp(17),0,dp(6),0);weight(h,t);if(right!=null)h.addView(text(right,13,MUTED,false));h.addView(icon("chevron",0xff747477,20),new LinearLayout.LayoutParams(dp(25),dp(38)));
+  h.setClickable(true);h.setFocusable(true);h.setOnClickListener(v->r.run());p.addView(h,new LinearLayout.LayoutParams(-1,-2));space(p,11);
+ }
+ class BalanceArt extends Drawable{
+  final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
+  @Override public void draw(Canvas canvas){
+   RectF r=new RectF(getBounds());float w=r.width(),h=r.height();if(w<=0||h<=0)return;
+   canvas.save();canvas.translate(r.left,r.top);RectF rect=new RectF(0,0,w,h);float radius=dp(22);Path clip=new Path();clip.addRoundRect(rect,radius,radius,Path.Direction.CW);canvas.clipPath(clip);
+   p.setShader(new LinearGradient(0,0,w,h,new int[]{0xff111112,0xff0b0b0c,0xff21090c},new float[]{0,.62f,1},Shader.TileMode.CLAMP));canvas.drawRect(rect,p);
+   p.setShader(new RadialGradient(w*.98f,h*.22f,w*.53f,new int[]{0xffc51621,0xff5d1016,0x00120a0a},new float[]{0,.48f,1},Shader.TileMode.CLAMP));canvas.drawRect(rect,p);
+   Path wave=new Path();wave.moveTo(w*.56f,h);wave.cubicTo(w*.72f,h*.93f,w*.74f,h*.65f,w*.87f,h*.57f);wave.cubicTo(w*.93f,h*.52f,w*.96f,h*.48f,w,h*.42f);wave.lineTo(w,h);wave.close();
+   p.setShader(new LinearGradient(w*.55f,h*.45f,w,h,new int[]{0xff7e0b15,0xff240d10,0xff0d0b0c},null,Shader.TileMode.CLAMP));canvas.drawPath(wave,p);p.setShader(null);p.setStyle(Paint.Style.STROKE);p.setColor(0xff262021);p.setStrokeWidth(dp(1));canvas.drawRoundRect(rect,radius,radius,p);p.setStyle(Paint.Style.FILL);canvas.restore();
+  }
+  @Override public void setAlpha(int a){p.setAlpha(a);invalidateSelf();}
+  @Override public void setColorFilter(ColorFilter c){p.setColorFilter(c);invalidateSelf();}
+  @Override public int getOpacity(){return PixelFormat.TRANSLUCENT;}
+ }
+ void tab(LinearLayout bar,String key,String name,String dest,boolean active){
+  LinearLayout t=col();t.setGravity(Gravity.CENTER);t.setMinimumHeight(dp(62));int color=active?RED:MUTED;
+  t.addView(icon(key,color,23),new LinearLayout.LayoutParams(dp(28),dp(28)));space(t,4);TextView caption=text(name,10,color,active);caption.setGravity(Gravity.CENTER);t.addView(caption);t.setContentDescription(name);t.setClickable(true);t.setFocusable(true);t.setOnClickListener(v->nav(dest));bar.addView(t,new LinearLayout.LayoutParams(0,dp(62),1));
+ }
+ void bottomBar(LinearLayout outer){
+  LinearLayout bar=horizontal();bar.setPadding(dp(5),dp(10),dp(5),dp(6));GradientDrawable d=new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{0xff17090b,0xff090909,0xff050506});d.setCornerRadii(new float[]{dp(22),dp(22),dp(22),dp(22),0,0,0,0});d.setStroke(dp(1),0xff201619);bar.setBackground(d);
+  tab(bar,"home","Главная","home",page.equals("home")||page.equals("accounts"));tab(bar,"chart","Аналитика","analytics",page.equals("analytics")||page.equals("budget"));
+  FrameLayout plusSlot=new FrameLayout(this);bar.addView(plusSlot,new LinearLayout.LayoutParams(0,dp(64),1));FrameLayout circle=new FrameLayout(this);circle.setBackground(bg(0xffff2b35,100));circle.addView(icon("plus",WHITE,31),new FrameLayout.LayoutParams(-1,-1));plusSlot.addView(circle,new FrameLayout.LayoutParams(dp(54),dp(54),Gravity.CENTER));circle.setContentDescription("Добавить операцию");circle.setClickable(true);circle.setFocusable(true);circle.setOnClickListener(v->chooseType());
+  tab(bar,"list","Операции","history",page.equals("history"));tab(bar,"person","Профиль","settings",page.equals("settings"));outer.addView(bar,new LinearLayout.LayoutParams(-1,-2));
+ }
+
  void nav(String target){page=target;accountFilter=null;historyLimit=100;show();}
  void show(){
   LinearLayout outer=col();outer.setBackgroundColor(BG);outer.setLayoutParams(new ViewGroup.LayoutParams(-1,-1));
-  ScrollView sc=new ScrollView(this);sc.setFillViewport(true);root=col();root.setPadding(dp(20),dp(25),dp(20),dp(23));sc.addView(root,new ScrollView.LayoutParams(-1,-2));outer.addView(sc,new LinearLayout.LayoutParams(-1,0,1));
-  line(outer);LinearLayout bar=horizontal();bar.setPadding(dp(3),dp(7),dp(3),dp(4));bar.setBackgroundColor(BG);
-  String[] labels={"⌂\nГлавная","▥\nАналитика","⚙\nНастройки"};String[] ids={"home","analytics","settings"};
-  for(int n=0;n<ids.length;n++){final String to=ids[n];boolean active=page.equals(to)||to.equals("home")&&(page.equals("accounts")||page.equals("history"));TextView t=text(labels[n],14,active?RED:MUTED,active);t.setGravity(Gravity.CENTER);t.setMinHeight(dp(56));t.setOnClickListener(v->nav(to));weight(bar,t);}
-  outer.addView(bar,new LinearLayout.LayoutParams(-1,-2));setContentView(outer);
-  switch(page){case "accounts":accounts();break;case "history":history();break;case "analytics":analytics();break;case "settings":settings();break;default:home();}
+  ScrollView sc=new ScrollView(this);sc.setFillViewport(true);sc.setVerticalScrollBarEnabled(false);
+  root=col();int pad=getResources().getConfiguration().screenWidthDp>=600?36:18;root.setPadding(dp(pad),dp(page.equals("home")?26:20),dp(pad),dp(23));sc.addView(root,new ScrollView.LayoutParams(-1,-2));outer.addView(sc,new LinearLayout.LayoutParams(-1,0,1));
+  bottomBar(outer);setContentView(outer);
+  switch(page){case "accounts":accounts();break;case "history":history();break;case "analytics":analytics();break;case "budget":budgetPage();break;case "settings":settings();break;default:home();}
  }
- void title(String s){label(root,s,30,WHITE,true);space(root,22);}
+ void title(String s){LinearLayout h=horizontal();if(!page.equals("home")){SvgIcon back=icon("back",MUTED,25);back.setContentDescription("Назад");back.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);back.setOnClickListener(v->nav("home"));h.addView(back,new LinearLayout.LayoutParams(dp(37),dp(48)));}weight(h,text(s,29,WHITE,true));root.addView(h);space(root,20);}
  void home(){
-  title("Мои финансы");
-  LinearLayout hero=col();hero.setBackground(gradient());hero.setPadding(dp(22),dp(22),dp(22),dp(22));hero.setMinimumHeight(dp(156));
-  LinearLayout top=horizontal();weight(top,text("Общий баланс",16,0xffe9d2d4,false));TextView eye=text(hidden?"Показать":"Скрыть",13,WHITE,true);eye.setPadding(dp(10),0,0,0);eye.setOnClickListener(v->{hidden=!hidden;prefs.edit().putBoolean("hidden",hidden).apply();show();});top.addView(eye);hero.addView(top);space(hero,16);
-  label(hero,hidden?"••••••":money(ledger.total()),34,WHITE,true);space(hero,10);label(hero,ledger.accounts.isEmpty()?"Добавьте карту, наличные или счёт":"По внесённым данным",13,0xffe9d2d4,false);root.addView(hero);space(root,14);
-  pair(root,action("+  Доход",false,()->entryDialog(Ledger.IN,null)),action("−  Расход",false,()->entryDialog(Ledger.OUT,null)));space(root,16);
-  menu(root,"▤","Карты, наличные, счета",String.valueOf(ledger.accounts.size()),()->nav("accounts"));
-  menu(root,"⇄","Перевод между счетами",null,()->entryDialog(Ledger.MOVE,null));
-  space(root,12);heading("Последние операции","Все",()->{month=YearMonth.now();nav("history");});
-  List<Ledger.Entry> all=ledger.sorted();if(all.isEmpty()){label(root,"Пока нет операций",15,MUTED,false);space(root,8);label(root,"Добавьте доход или расход — здесь появится история.",14,MUTED,false);}else for(int i=0;i<Math.min(5,all.size());i++)entryRow(all.get(i));
+  LinearLayout header=horizontal();weight(header,text("Мои финансы",29,WHITE,true));SvgIcon settings=icon("settings",0xff929295,24);settings.setContentDescription("Настройки");settings.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);settings.setOnClickListener(v->nav("settings"));header.addView(settings,new LinearLayout.LayoutParams(dp(40),dp(44)));root.addView(header);space(root,31);
+  LinearLayout hero=col();hero.setBackground(new BalanceArt());hero.setPadding(dp(22),dp(24),dp(20),dp(24));hero.setMinimumHeight(dp(151));
+  LinearLayout top=horizontal();weight(top,text("Общий баланс",15,0xffa9a6a8,false));SvgIcon eye=icon(hidden?"hidden":"eye",0xffa9a6a8,20);eye.setContentDescription(hidden?"Показать баланс":"Скрыть баланс");eye.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);eye.setOnClickListener(v->{hidden=!hidden;prefs.edit().putBoolean("hidden",hidden).apply();show();});top.addView(eye,new LinearLayout.LayoutParams(dp(34),dp(28)));hero.addView(top);space(hero,13);
+  TextView sum=text(hidden?"••••••":money(ledger.total()),37,WHITE,true);sum.setSingleLine(true);sum.setAutoSizeTextTypeUniformWithConfiguration(20,37,1,android.util.TypedValue.COMPLEX_UNIT_SP);hero.addView(sum,new LinearLayout.LayoutParams(-1,dp(51)));space(hero,8);
+  YearMonth now=YearMonth.now();long delta=ledger.sum(now,Ledger.IN)-ledger.sum(now,Ledger.OUT);String sub=ledger.accounts.isEmpty()?"Добавьте первый счёт":hidden?"Изменение скрыто":signed(delta)+" за месяц";label(hero,sub,14,ledger.accounts.isEmpty()?MUTED:RED,false);
+  root.addView(hero,new LinearLayout.LayoutParams(-1,-2));space(root,25);
+  menu(root,"wallet","Счета",null,()->nav("accounts"));
+  menu(root,"transfer","Операции",null,()->{month=YearMonth.now();nav("history");});
+  menu(root,"chart","Отчёты",null,()->{month=YearMonth.now();nav("analytics");});
+  menu(root,"target","Бюджет",null,()->{month=YearMonth.now();nav("budget");});
  }
+
  void accounts(){
   title("Счета");label(root,"Всего: "+(hidden?"••••••":money(ledger.total())),22,WHITE,true);space(root,18);
   for(Ledger.Account a:ledger.accounts.values()){
-   LinearLayout l=col();LinearLayout h=horizontal();LinearLayout left=col();label(left,a.name,17,WHITE,true);space(left,4);label(left,a.type,13,MUTED,false);weight(h,left);h.addView(text(hidden?"••••":money(ledger.balance(a.id)),18,WHITE,true));l.addView(h);space(l,12);
+   LinearLayout l=col();LinearLayout h=horizontal();h.addView(iconTile(a.type.equals("Карта")?"card":a.type.equals("Наличные")?"cash":"bank",RED,23,42));LinearLayout left=col();left.setPadding(dp(12),0,dp(6),0);label(left,a.name,17,WHITE,true);space(left,4);label(left,a.type,13,MUTED,false);weight(h,left);h.addView(text(hidden?"••••":money(ledger.balance(a.id)),18,WHITE,true));l.addView(h);space(l,12);
    pair(l,action("Операции",false,()->{page="history";accountFilter=a.id;month=YearMonth.now();historyLimit=100;show();}),action("Настроить",false,()->accountDialog(a)));card(root,l);space(root,10);
   }
   if(ledger.accounts.isEmpty()){label(root,"Создайте первый кошелёк и укажите остаток до первой операции.",15,MUTED,false);space(root,15);}
@@ -106,15 +139,22 @@ public class MainActivity extends Activity {
  void chooseType(){new AlertDialog.Builder(this).setTitle("Тип операции").setItems(new String[]{"Доход","Расход","Перевод"},(d,i)->entryDialog(new String[]{Ledger.IN,Ledger.OUT,Ledger.MOVE}[i],null)).show();}
  void entryRow(Ledger.Entry e){
   boolean transfer=Ledger.MOVE.equals(e.type), income=Ledger.IN.equals(e.type);LinearLayout h=horizontal();h.setPadding(0,dp(12),0,dp(12));h.setMinimumHeight(dp(66));
-  TextView ic=text(transfer?"⇄":income?"+":"−",23,RED,true);ic.setGravity(Gravity.CENTER);ic.setBackground(bg(CARD,13));h.addView(ic,new LinearLayout.LayoutParams(dp(44),dp(44)));
+  h.addView(iconTile(transfer?"transfer":CategoryCatalog.icon(e.category),RED,24,44));
   LinearLayout left=col();left.setPadding(dp(12),0,dp(6),0);label(left,transfer?"Перевод":e.category,16,WHITE,true);space(left,5);
   String details=e.date.format(DateTimeFormatter.ofPattern("d MMM",RU))+" · "+(transfer?accountName(e.from)+" → "+accountName(e.to):accountName(income?e.to:e.from));if(!e.note.isEmpty())details+=" · "+e.note;TextView dt=text(details,12,MUTED,false);dt.setMaxLines(2);dt.setEllipsize(android.text.TextUtils.TruncateAt.END);left.addView(dt);weight(h,left);
   TextView sum=text(hidden?"••••":transfer?money(e.amount):signed(income?e.amount:-e.amount),16,income?WHITE:transfer?MUTED:RED,true);h.addView(sum);h.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("Операция").setItems(new String[]{"Изменить","Удалить"},(d,i)->{if(i==0)entryDialog(e.type,e);else if(writable())new AlertDialog.Builder(this).setMessage("Удалить операцию? Балансы и отчёты пересчитаются.").setNegativeButton("Отмена",null).setPositiveButton("Удалить",(a,b)->{ledger.entries.remove(e.id);save();show();}).show();}).show());root.addView(h);line(root);
  }
  void progress(LinearLayout l,long spent,long limit){ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setMax(1000);bar.setProgress(limit<=0?0:(int)Math.min(1000,Math.max(0,spent*1000.0/limit)));bar.setProgressTintList(ColorStateList.valueOf(RED));bar.setProgressBackgroundTintList(ColorStateList.valueOf(LINE));l.addView(bar,new LinearLayout.LayoutParams(-1,dp(10)));}
  void analytics(){
-  title("Аналитика");monthControl();long in=ledger.sum(month,Ledger.IN),out=ledger.sum(month,Ledger.OUT),lim=ledger.limit(month,"");
+  title("Отчёты");monthControl();long in=ledger.sum(month,Ledger.IN),out=ledger.sum(month,Ledger.OUT);
   LinearLayout c=col();label(c,"Расходы за месяц",14,MUTED,false);space(c,7);label(c,money(out),30,WHITE,true);space(c,12);label(c,"Доходы  "+money(in),15,WHITE,false);space(c,6);label(c,"Разница  "+signed(in-out),15,MUTED,false);card(root,c);space(root,15);
+  heading("Расходы по категориям",null,null);SortedMap<String,Long> by=ledger.categories(month);ArrayList<String> names=new ArrayList<>(by.keySet());names.sort((x,y)->Long.compare(by.get(y),by.get(x)));
+  for(String name:names){long n=by.get(name);LinearLayout x=col();LinearLayout h=horizontal();h.addView(iconTile(CategoryCatalog.icon(name),RED,21,36));TextView t=text(name,15,WHITE,false);t.setPadding(dp(10),0,0,0);weight(h,t);h.addView(text(money(n),15,WHITE,true));x.addView(h);space(x,7);progress(x,n,out);space(x,4);label(x,String.format(RU,"%.1f%% расходов",100.0*n/out),12,MUTED,false);card(root,x);space(root,8);}
+  if(names.isEmpty())label(root,"Пока нет расходов за этот месяц.",14,MUTED,false);
+  space(root,16);menu(root,"target","Бюджет",null,()->nav("budget"));menu(root,"star","Финансовый помощник",null,()->advice());
+ }
+ void budgetPage(){
+  title("Бюджет");monthControl();long out=ledger.sum(month,Ledger.OUT),lim=ledger.limit(month,"");
   heading("Бюджет","Настроить",()->limitDialog(""));LinearLayout b=col();label(b,lim==0?"Лимит не задан":"Осталось",14,MUTED,false);space(b,8);label(b,lim==0?"—":money(lim-out),26,lim>0&&out>lim?RED:WHITE,true);space(b,10);if(lim>0){progress(b,out,lim);space(b,8);label(b,money(out)+" из "+money(lim),13,MUTED,false);if(month.equals(YearMonth.now())){space(b,8);label(b,"Лимит до конца месяца: "+money(ledger.daily(month,LocalDate.now()))+" / день",14,WHITE,false);}}else label(b,"Установите сумму, которую планируете потратить.",14,MUTED,false);card(root,b);space(root,18);
   heading("Категории","+ Лимит",()->chooseCategoryLimit());SortedMap<String,Long> by=ledger.categories(month);Set<String> cats=new LinkedHashSet<>(by.keySet());String prefix=month+"|";for(String k:ledger.limits.keySet())if(k.startsWith(prefix)&&k.length()>prefix.length())cats.add(k.substring(prefix.length()));
   ArrayList<String> sorted=new ArrayList<>(cats);sorted.sort((a,d)->Long.compare(by.getOrDefault(d,0L),by.getOrDefault(a,0L)));
@@ -123,11 +163,11 @@ public class MainActivity extends Activity {
   space(root,17);menu(root,"✦","Финансовый помощник",null,()->advice());
  }
  void settings(){
-  title("Настройки");menu(root,"▤","Управление счетами",null,()->nav("accounts"));
+  title("Профиль");menu(root,"▤","Управление счетами",null,()->nav("accounts"));
   menu(root,"⇣","Импорт CSV",null,()->pickImportAccount());
   menu(root,"⇡","Сохранить резервную копию",null,()->exportBackup());
   menu(root,"↻","Восстановить копию",null,()->openDocument(12));
-  LinearLayout l=col();Switch s=new Switch(this);s.setText("Защищать экран от скриншотов");s.setTextColor(WHITE);s.setChecked(secure);s.setThumbTintList(ColorStateList.valueOf(RED));s.setOnCheckedChangeListener((v,on)->{secure=on;prefs.edit().putBoolean("secure",secure).apply();security();});l.addView(s);space(l,12);label(l,"Данные хранятся на устройстве. Интернет и банковские разрешения не запрашиваются.",13,MUTED,false);card(root,l);space(root,16);label(root,"Мои финансы · v0.2",14,MUTED,false);space(root,8);label(root,"Подключение банков и нейросети — будущие этапы.",13,MUTED,false);
+  LinearLayout l=col();Switch s=new Switch(this);s.setText("Защищать экран от скриншотов");s.setTextColor(WHITE);s.setChecked(secure);s.setThumbTintList(ColorStateList.valueOf(RED));s.setOnCheckedChangeListener((v,on)->{secure=on;prefs.edit().putBoolean("secure",secure).apply();security();});l.addView(s);space(l,12);label(l,"Данные хранятся на устройстве. Интернет и банковские разрешения не запрашиваются.",13,MUTED,false);card(root,l);space(root,16);label(root,"Мои финансы · v0.3",14,MUTED,false);space(root,8);label(root,"Подключение банков и нейросети — будущие этапы.",13,MUTED,false);
  }
  LinearLayout panel(){LinearLayout l=col();l.setPadding(dp(22),dp(6),dp(22),dp(8));return l;}
  EditText field(LinearLayout l,String title,String value,boolean numeric){space(l,9);label(l,title,13,MUTED,false);EditText e=new EditText(this);e.setSingleLine(true);e.setText(value);if(numeric)e.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL|android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);l.addView(e);return e;}
