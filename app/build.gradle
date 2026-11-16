@@ -1,4 +1,4 @@
 plugins { id 'com.android.application' }
 android { namespace 'ru.personal.alfafinance'; compileSdk 35
- defaultConfig { applicationId 'ru.personal.myfinances'; minSdk 26; targetSdk 34; versionCode 2; versionName '0.2' }
+ defaultConfig { applicationId 'ru.personal.myfinances'; minSdk 26; targetSdk 34; versionCode 3; versionName '0.3' }
 }
