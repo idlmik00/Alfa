@@ -28,8 +28,18 @@ jobs:
           if [ ! -f "$SDK/platforms/android-35/android.jar" ] || [ ! -d "$SDK/build-tools/35.0.0" ]; then
             "$SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK" 'platforms;android-35' 'build-tools;35.0.0'
           fi
+      - name: Check ledger calculations
+        run: |
+          mkdir -p /tmp/ledger-test
+          javac -encoding UTF-8 -d /tmp/ledger-test app/src/main/java/ru/personal/alfafinance/Ledger.java tests/LedgerSmoke.java
+          java -cp /tmp/ledger-test ru.personal.alfafinance.LedgerSmoke
+      - name: Cache development signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: myfinances-debug-signing-v1
       - run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: Alfa-APK
+          name: MyFinances-APK
           path: app/build/outputs/apk/debug/app-debug.apk
