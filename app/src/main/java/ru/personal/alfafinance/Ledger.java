@@ -23,7 +23,8 @@ public final class Ledger {
  public final Map<String,Entry> entries=new LinkedHashMap<>();
  public final Map<String,Long> limits=new LinkedHashMap<>();
  public final Set<String> imports=new LinkedHashSet<>();
- public final Map<String,String> bankAccounts=new LinkedHashMap<>(), bankRows=new LinkedHashMap<>();
+ public final Map<String,String> bankAccounts=new LinkedHashMap<>(), bankRows=new LinkedHashMap<>(), merchantRules=new LinkedHashMap<>(), entryMerchants=new LinkedHashMap<>(), entryMcc=new LinkedHashMap<>(), autoCategories=new LinkedHashMap<>();
+ public final Set<String> manualCategories=new HashSet<>();
  public void put(Account a){if(accounts.size()>=200&&!accounts.containsKey(a.id))throw new IllegalArgumentException("Не больше 200 счетов");accounts.put(a.id,a);}
  public boolean used(String id){for(Entry e:entries.values())if(id.equals(e.from)||id.equals(e.to))return true;return false;}
  public void removeAccount(String id){if(used(id))throw new IllegalArgumentException("Сначала перенесите или удалите операции этого счёта");accounts.remove(id);bankAccounts.values().removeIf(id::equals);bankRows.keySet().removeIf(k->k.startsWith(id+"|"));}
