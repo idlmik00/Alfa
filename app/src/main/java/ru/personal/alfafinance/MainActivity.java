@@ -35,7 +35,7 @@ public class MainActivity extends Activity {
   super.onCreate(saved);prefs=getSharedPreferences("local",MODE_PRIVATE);hidden=prefs.getBoolean("hidden",false);secure=prefs.getBoolean("secure",true);
   getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);getWindow().getDecorView().setSystemUiVisibility(0);security();
   try{String state=prefs.getString("ledger_v2",null);if(state!=null)ledger=decode(state);}catch(Exception e){storageLocked=true;loadFailed=true;}
-  if(saved!=null){page=saved.getString("page","home");accountFilter=saved.getString("filter");importAccount=saved.getString("import");try{month=YearMonth.parse(saved.getString("month"));}catch(Exception ignored){}}
+  if(saved!=null){page=saved.getString("page","home");if(Arrays.asList("category","day","calendar").contains(page))page="analytics";accountFilter=saved.getString("filter");importAccount=saved.getString("import");try{month=YearMonth.parse(saved.getString("month"));}catch(Exception ignored){}}
   show();
   if(storageLocked)new AlertDialog.Builder(this).setTitle("Не удалось прочитать локальные данные").setMessage("Исходные данные сохранены. Изменения отключены, чтобы не перезаписать их. Восстановите проверенную резервную копию в настройках.").setPositiveButton("ОК",null).show();
  }
@@ -270,12 +270,12 @@ public class MainActivity extends Activity {
   final String[] categoryValue={old==null||move?"":old.category};
   if(!move){space(l,14);label(l,"Категория",13,MUTED,false);space(l,8);LinearLayout catRow=horizontal();catRow.setPadding(dp(12),dp(8),dp(12),dp(8));catRow.setMinimumHeight(dp(58));catRow.setBackground(bg(CARD,16));FrameLayout tile=iconTile(CategoryCatalog.icon(categoryValue[0]),RED,23,40);catRow.addView(tile);TextView chosen=text(categoryValue[0].isEmpty()?"Выбрать категорию":categoryValue[0],16,WHITE,false);chosen.setPadding(dp(12),0,0,0);weight(catRow,chosen);catRow.addView(icon("chevron",MUTED,19),new LinearLayout.LayoutParams(dp(24),dp(36)));catRow.setOnClickListener(v->categoryPicker(income,categoryValue[0],name->{categoryValue[0]=name;chosen.setText(name);tile.removeAllViews();tile.addView(icon(CategoryCatalog.icon(name),RED,23),new FrameLayout.LayoutParams(-1,-1));}));l.addView(catRow);}
   final LocalDate[] selectedDate={old==null?LocalDate.now():old.date};space(l,14);label(l,"Дата",13,MUTED,false);space(l,8);LinearLayout day=horizontal();day.setPadding(dp(12),dp(8),dp(12),dp(8));day.setMinimumHeight(dp(54));day.setBackground(bg(CARD,16));day.addView(iconTile("calendar",RED,23,38));TextView dateText=text(selectedDate[0].format(DateTimeFormatter.ofPattern("d MMMM yyyy",RU)),16,WHITE,false);dateText.setPadding(dp(12),0,0,0);weight(day,dateText);day.addView(icon("chevron",MUTED,19),new LinearLayout.LayoutParams(dp(24),dp(36)));day.setOnClickListener(v->{LocalDate current=selectedDate[0];DatePickerDialog picker=new DatePickerDialog(this,(p,y,m,dayOfMonth)->{selectedDate[0]=LocalDate.of(y,m+1,dayOfMonth);dateText.setText(selectedDate[0].format(DateTimeFormatter.ofPattern("d MMMM yyyy",RU)));},current.getYear(),current.getMonthValue()-1,current.getDayOfMonth());picker.getDatePicker().setMaxDate(System.currentTimeMillis());picker.show();});l.addView(day);
-  space(l,8);EditText note=field(l,"Комментарий (необязательно)",old==null?"":old.note,false);note.setHint(move?"Например, снятие наличных":"Например, покупка в магазине");space(l,14);if(move)label(l,"Перевод не увеличивает доходы или расходы. Комиссию банка добавьте отдельным расходом.",13,MUTED,false);
+  space(l,8);EditText note=field(l,"Комментарий (необязательно)",old==null?"":old.note,false);note.setHint(move?"Например, снятие наличных":"Например, покупка в магазине");space(l,14);if(old!=null&&!ledger.entryMcc.getOrDefault(old.id,"").isEmpty())label(l,"MCC: "+ledger.entryMcc.get(old.id),13,MUTED,false);if(move)label(l,"Перевод не увеличивает доходы или расходы. Комиссию банка добавьте отдельным расходом.",13,MUTED,false);
   LinearLayout foot=col();foot.setPadding(dp(20),dp(8),dp(20),dp(14));button(foot,old==null?"Сохранить операцию":"Сохранить изменения",true,()->{try{
    long n=amount(value(sum));if(n<=0)throw new IllegalArgumentException("Введите сумму больше нуля");
    String a=ids.get(first.getSelectedItemPosition()),other=move?ids.get(second.getSelectedItemPosition()):null,desc=value(note),c=move?"":categoryValue[0];
    if(!move&&c.isEmpty())throw new IllegalArgumentException("Выберите категорию");
-   ledger.put(new Ledger.Entry(old==null?uid():old.id,kind,income?null:a,move?other:income?a:null,c,desc,selectedDate[0],n));save();month=YearMonth.from(selectedDate[0]);d.dismiss();show();
+   Ledger.Entry updated=new Ledger.Entry(old==null?uid():old.id,kind,income?null:a,move?other:income?a:null,c,desc,selectedDate[0],n);ledger.put(updated);if(old!=null&&!move&&!old.category.equals(c))learn(old,c);save();month=YearMonth.from(selectedDate[0]);d.dismiss();show();
   }catch(Exception e){error(e);}});shell.addView(foot);
   d.setContentView(shell);Window w=d.getWindow();if(w!=null){w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(BG));w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE|WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);if(secure)w.addFlags(WindowManager.LayoutParams.FLAG_SECURE);w.setStatusBarColor(BG);w.setNavigationBarColor(BG);}shell.setFocusableInTouchMode(true);shell.requestFocus();d.show();if(w!=null)w.setLayout(-1,-1);
  }
@@ -286,15 +286,32 @@ public class MainActivity extends Activity {
   if(out>in)s.append("\n\nРасходы выше учтённых доходов. Проверьте полноту записей.");SortedMap<String,Long> by=ledger.categories(month);if(!by.isEmpty()){Map.Entry<String,Long> max=Collections.max(by.entrySet(),Map.Entry.comparingByValue());s.append("\n\nСамая крупная категория: "+max.getKey()+" ("+money(max.getValue())+").");}for(Map.Entry<String,Long> c:by.entrySet()){long n=ledger.limit(month,c.getKey());if(n>0&&c.getValue()>n)s.append("\nЛимит «"+c.getKey()+"» превышен на "+money(c.getValue()-n)+".");}
   s.append("\n\nЭто локальные расчёты, а не нейросеть. Лимит бюджета не равен доступным деньгам.");new AlertDialog.Builder(this).setTitle("Финансовый помощник").setMessage(s.toString()).setPositiveButton("Понятно",null).show();
  }
- String encode(Ledger model)throws Exception{JSONObject obj=new JSONObject();obj.put("schema",2);JSONArray a=new JSONArray(),e=new JSONArray(),im=new JSONArray();JSONObject limits=new JSONObject();for(Ledger.Account x:model.accounts.values()){JSONObject o=new JSONObject();o.put("id",x.id).put("name",x.name).put("type",x.type).put("opening",x.opening);a.put(o);}for(Ledger.Entry x:model.entries.values()){JSONObject o=new JSONObject();o.put("id",x.id).put("type",x.type).put("from",x.from==null?JSONObject.NULL:x.from).put("to",x.to==null?JSONObject.NULL:x.to).put("category",x.category).put("note",x.note).put("date",x.date.toString()).put("amount",x.amount);e.put(o);}for(Map.Entry<String,Long> x:model.limits.entrySet())limits.put(x.getKey(),x.getValue());for(String x:model.imports)im.put(x);obj.put("accounts",a).put("entries",e).put("limits",limits).put("imports",im).put("bankAccounts",new JSONObject(model.bankAccounts)).put("bankRows",new JSONObject(model.bankRows));return obj.toString();}
+ String encode(Ledger model)throws Exception{JSONObject obj=new JSONObject();obj.put("schema",2);JSONArray a=new JSONArray(),e=new JSONArray(),im=new JSONArray();JSONObject limits=new JSONObject();for(Ledger.Account x:model.accounts.values()){JSONObject o=new JSONObject();o.put("id",x.id).put("name",x.name).put("type",x.type).put("opening",x.opening);a.put(o);}for(Ledger.Entry x:model.entries.values()){JSONObject o=new JSONObject();o.put("id",x.id).put("type",x.type).put("from",x.from==null?JSONObject.NULL:x.from).put("to",x.to==null?JSONObject.NULL:x.to).put("category",x.category).put("note",x.note).put("date",x.date.toString()).put("amount",x.amount);e.put(o);}for(Map.Entry<String,Long> x:model.limits.entrySet())limits.put(x.getKey(),x.getValue());for(String x:model.imports)im.put(x);obj.put("accounts",a).put("entries",e).put("limits",limits).put("imports",im).put("bankAccounts",new JSONObject(model.bankAccounts)).put("bankRows",new JSONObject(model.bankRows)).put("merchantRules",new JSONObject(model.merchantRules)).put("entryMerchants",new JSONObject(model.entryMerchants)).put("entryMcc",new JSONObject(model.entryMcc)).put("autoCategories",new JSONObject(model.autoCategories)).put("manualCategories",new JSONArray(model.manualCategories));return obj.toString();}
  String nullable(JSONObject o,String k)throws Exception{return o.isNull(k)?null:o.getString(k);}
- Ledger decode(String raw)throws Exception{JSONObject obj=new JSONObject(raw);if(obj.getInt("schema")!=2)throw new IllegalArgumentException("Неподдерживаемый формат копии");Ledger m=new Ledger();JSONArray a=obj.getJSONArray("accounts"),e=obj.getJSONArray("entries");for(int i=0;i<a.length();i++){JSONObject x=a.getJSONObject(i);String id=x.getString("id");if(m.accounts.containsKey(id))throw new IllegalArgumentException("Повтор счёта");m.put(new Ledger.Account(id,x.getString("name"),x.getString("type"),x.getLong("opening")));}for(int i=0;i<e.length();i++){JSONObject x=e.getJSONObject(i);String id=x.getString("id");if(m.entries.containsKey(id))throw new IllegalArgumentException("Повтор операции");m.put(new Ledger.Entry(id,x.getString("type"),nullable(x,"from"),nullable(x,"to"),x.getString("category"),x.getString("note"),LocalDate.parse(x.getString("date")),x.getLong("amount")));}JSONObject limits=obj.getJSONObject("limits");Iterator<String> keys=limits.keys();while(keys.hasNext()){String k=keys.next();int at=k.indexOf('|');if(at<0)throw new IllegalArgumentException("Неверный бюджет");m.setLimit(YearMonth.parse(k.substring(0,at)),k.substring(at+1),limits.getLong(k));}JSONArray im=obj.optJSONArray("imports");if(im!=null)for(int i=0;i<im.length();i++)m.imports.add(im.getString(i));JSONObject bindings=obj.optJSONObject("bankAccounts");if(bindings!=null){Iterator<String> it=bindings.keys();while(it.hasNext()){String k=it.next(),v=bindings.getString(k);if(m.accounts.containsKey(v))m.bankAccounts.put(k,v);}}JSONObject bankRows=obj.optJSONObject("bankRows");if(bankRows!=null){Iterator<String> it=bankRows.keys();while(it.hasNext()){String k=it.next();m.bankRows.put(k,bankRows.getString(k));}}m.total();return m;}
+ Ledger decode(String raw)throws Exception{JSONObject obj=new JSONObject(raw);if(obj.getInt("schema")!=2)throw new IllegalArgumentException("Неподдерживаемый формат копии");Ledger m=new Ledger();JSONArray a=obj.getJSONArray("accounts"),e=obj.getJSONArray("entries");for(int i=0;i<a.length();i++){JSONObject x=a.getJSONObject(i);String id=x.getString("id");if(m.accounts.containsKey(id))throw new IllegalArgumentException("Повтор счёта");m.put(new Ledger.Account(id,x.getString("name"),x.getString("type"),x.getLong("opening")));}for(int i=0;i<e.length();i++){JSONObject x=e.getJSONObject(i);String id=x.getString("id");if(m.entries.containsKey(id))throw new IllegalArgumentException("Повтор операции");m.put(new Ledger.Entry(id,x.getString("type"),nullable(x,"from"),nullable(x,"to"),x.getString("category"),x.getString("note"),LocalDate.parse(x.getString("date")),x.getLong("amount")));}JSONObject limits=obj.getJSONObject("limits");Iterator<String> keys=limits.keys();while(keys.hasNext()){String k=keys.next();int at=k.indexOf('|');if(at<0)throw new IllegalArgumentException("Неверный бюджет");m.setLimit(YearMonth.parse(k.substring(0,at)),k.substring(at+1),limits.getLong(k));}JSONArray im=obj.optJSONArray("imports");if(im!=null)for(int i=0;i<im.length();i++)m.imports.add(im.getString(i));JSONObject bindings=obj.optJSONObject("bankAccounts");if(bindings!=null){Iterator<String> it=bindings.keys();while(it.hasNext()){String k=it.next(),v=bindings.getString(k);if(m.accounts.containsKey(v))m.bankAccounts.put(k,v);}}JSONObject bankRows=obj.optJSONObject("bankRows");if(bankRows!=null){Iterator<String> it=bankRows.keys();while(it.hasNext()){String k=it.next();m.bankRows.put(k,bankRows.getString(k));}}readMap(obj,"merchantRules",m.merchantRules);readMap(obj,"entryMerchants",m.entryMerchants);readMap(obj,"entryMcc",m.entryMcc);readMap(obj,"autoCategories",m.autoCategories);JSONArray manual=obj.optJSONArray("manualCategories");if(manual!=null)for(int i=0;i<manual.length();i++)m.manualCategories.add(manual.getString(i));m.total();return m;}
+ void readMap(JSONObject obj,String name,Map<String,String> target)throws Exception{JSONObject map=obj.optJSONObject(name);if(map==null)return;Iterator<String> keys=map.keys();while(keys.hasNext()){String k=keys.next();target.put(k,map.getString(k));}}
  void save(){try{if(!prefs.edit().putString("ledger_v2",encode(ledger)).commit())throw new IOException();}catch(Exception e){storageLocked=true;toast("Не удалось сохранить изменения. Не закрывайте приложение; попробуйте сохранить резервную копию.");}}
  void openDocument(int req){Intent it=new Intent(Intent.ACTION_OPEN_DOCUMENT);it.addCategory(Intent.CATEGORY_OPENABLE);it.setType("*/*");startActivityForResult(it,req);}
  void exportBackup(){new AlertDialog.Builder(this).setTitle("Резервная копия").setMessage("JSON содержит суммы и описания операций без дополнительного шифрования. Сохраните файл в защищённом месте; не отправляйте его посторонним.").setNegativeButton("Отмена",null).setPositiveButton("Продолжить",(d,w)->{Intent it=new Intent(Intent.ACTION_CREATE_DOCUMENT);it.addCategory(Intent.CATEGORY_OPENABLE);it.setType("application/json");it.putExtra(Intent.EXTRA_TITLE,"Мои-финансы-"+LocalDate.now()+".json");startActivityForResult(it,11);}).show();}
  void pickImportAccount(){if(!writable())return;if(ledger.accounts.isEmpty()){toast("Сначала добавьте счёт для импорта");return;}ArrayList<String> ids=new ArrayList<>(ledger.accounts.keySet()),names=new ArrayList<>();for(String id:ids)names.add(accountName(id));new AlertDialog.Builder(this).setTitle("Импорт на счёт").setItems(names.toArray(new String[0]),(d,i)->{importAccount=ids.get(i);openDocument(13);}).show();}
  byte[] read(Uri uri)throws Exception{try(InputStream in=getContentResolver().openInputStream(uri);ByteArrayOutputStream buffer=new ByteArrayOutputStream()){if(in==null)throw new IOException();byte[] part=new byte[8192];int n;while((n=in.read(part))!=-1){if(buffer.size()+n>16*1024*1024)throw new IllegalArgumentException("Файл больше 16 МБ");buffer.write(part,0,n);}return buffer.toByteArray();}}
  String hash(byte[] raw)throws Exception{byte[] digest=MessageDigest.getInstance("SHA-256").digest(raw);StringBuilder b=new StringBuilder();for(byte x:digest)b.append(String.format(Locale.ROOT,"%02x",x&255));return b.toString();}
+  String merchantKey(String value){String key=BankRules.lower(value).replaceAll("[^\\p{L}\\p{N}]+"," ").trim();if(key.isEmpty()||key.length()>150||key.matches(".*\\d{8,}.*")||key.startsWith("операция по карте")||key.startsWith("оплата по выписке")||key.startsWith("поступление по выписке")||key.contains("перевод"))return "";return key;}
+ String entryMerchant(Ledger.Entry e){return ledger.entryMerchants.getOrDefault(e.id,merchantKey(e.note));}
+ void learn(Ledger.Entry e,String cat){ledger.manualCategories.add(e.id);String key=entryMerchant(e);if(!key.isEmpty()&&!Ledger.MOVE.equals(e.type))ledger.merchantRules.put(e.type+"|"+key,cat);}
+ FrameLayout operationIcon(Ledger.Entry e){
+  if(Ledger.MOVE.equals(e.type))return iconTile("transfer",RED,24,44);
+  String key=entryMerchant(e);String brand=null;int color=0xffd92d35;
+  if(BankRules.has(key,"pyaterochka","пятероч")){brand="5";color=0xffe32b36;}
+  else if(BankRules.has(key,"magnit","магнит")){brand="М";color=0xffe32636;}
+  else if(BankRules.has(key,"perekrestok","перекресток")){brand="П";color=0xff1d8650;}
+  else if(BankRules.has(key,"ozon","озон")){brand="OZ";color=0xff1768ff;}
+  else if(BankRules.has(key,"wildberries","вайлдберриз")){brand="WB";color=0xffa52b88;}
+  else if(BankRules.has(key,"vkusvill","вкусвилл")){brand="ВВ";color=0xff248c67;}
+  else if(BankRules.has(key,"lenta","лента")){brand="Л";color=0xff1649a0;}
+  if(brand==null)return iconTile(CategoryCatalog.icon(e.category),RED,24,44);
+  FrameLayout tile=new FrameLayout(this);tile.setBackground(bg(color,12));tile.setLayoutParams(new LinearLayout.LayoutParams(dp(44),dp(44)));TextView t=text(brand,16,WHITE,true);t.setGravity(Gravity.CENTER);tile.addView(t,new FrameLayout.LayoutParams(-1,-1));return tile;
+ }
  String normalizedNote(String s){return s.replaceAll("\\s+"," ").trim();}
  String matchKey(LocalDate date,long signed,String note){return date+"|"+signed+"|"+normalizedNote(note);}
  long signedOn(Ledger.Entry e,String account){return account.equals(e.to)?e.amount:account.equals(e.from)?-e.amount:0;}
@@ -323,7 +340,7 @@ public class MainActivity extends Activity {
    byAmount.computeIfAbsent(e.date+"|"+n,k->new ArrayList<>()).add(e);
   }
   Map<String,Integer> scan=new HashMap<>();for(BankStatement.Row r:statement.rows){String k=BankRules.stable(r);String mapped=ledger.bankRows.get(account+"|"+k+"|"+scan.merge(k,1,Integer::sum));if(mapped!=null)claimed.add(mapped);}
-  Map<String,Integer> occurrences=new HashMap<>(),oldOccurrences=new HashMap<>();Map<String,String> mappings=new LinkedHashMap<>();
+  Map<String,Integer> occurrences=new HashMap<>(),oldOccurrences=new HashMap<>();Map<String,String> mappings=new LinkedHashMap<>(), merchants=new LinkedHashMap<>(), mccs=new LinkedHashMap<>(), automatic=new LinkedHashMap<>();
   ArrayList<Ledger.Entry> pending=new ArrayList<>(),updates=new ArrayList<>();int duplicates=0,review=0,ambiguous=0;
   long net=0;
   for(BankStatement.Row r:statement.rows){
@@ -332,19 +349,20 @@ public class MainActivity extends Activity {
    String oldFp=r.fingerprint();int oldN=oldOccurrences.merge(oldFp,1,Integer::sum);
    String oldId;
    try{oldId="bank-"+hash((account+"|"+oldFp+"|"+oldN).getBytes(StandardCharsets.UTF_8));}catch(Exception ex){error(ex);return;}
-   if(ledger.bankRows.containsKey(key)){duplicates++;continue;}
-   Ledger.Entry found=ledger.entries.get(oldId);
-   if(found!=null&&used.contains(found.id))found=null;
+   
+   String knownId=ledger.bankRows.get(key);Ledger.Entry found=knownId==null?ledger.entries.get(oldId):ledger.entries.get(knownId);
+   if(knownId!=null&&found==null){duplicates++;continue;}
+   if(knownId==null&&found!=null&&used.contains(found.id))found=null;
    if(found==null){Deque<Ledger.Entry> q=exact.get(matchKey(r.date,r.amount,r.description));while(q!=null&&!q.isEmpty()&&used.contains(q.peek().id))q.remove();if(q!=null&&!q.isEmpty())found=q.remove();}
    if(found==null){Deque<Ledger.Entry> q=exact.get(matchKey(r.date,r.amount,BankRules.clean(r)));while(q!=null&&!q.isEmpty()&&used.contains(q.peek().id))q.remove();if(q!=null&&!q.isEmpty())found=q.remove();}
-   boolean income=r.amount>0;String cat=BankRules.category(r),note=BankRules.clean(r);
+   boolean income=r.amount>0;String cat=BankRules.category(r),note=BankRules.clean(r);String merchant=merchantKey(BankRules.merchant(r.description));if(!merchant.isEmpty()&&!cat.equals("Переводы — проверить"))cat=ledger.merchantRules.getOrDefault((income?Ledger.IN:Ledger.OUT)+"|"+merchant,cat);
    if(cat.endsWith("проверить")||cat.endsWith("уточнить"))review++;
    if(found!=null){
-    duplicates++;used.add(found.id);claimed.add(found.id);mappings.put(key,found.id);
+    duplicates++;used.add(found.id);claimed.add(found.id);mappings.put(key,found.id);merchants.put(found.id,merchant);mccs.put(found.id,BankRules.mcc(r.description));
     if(!Ledger.MOVE.equals(found.type)){
      boolean raw=normalizedNote(found.note).equals(normalizedNote(r.description));
      String oldAuto=category(r.description,income),oldXlsx=category(r.category+" "+r.description,income);
-     String corrected=(found.category.equals(oldAuto)||found.category.equals(oldXlsx)||found.category.equals("Переводы — проверить"))?cat:found.category;
+     String prev=ledger.autoCategories.get(found.id);boolean canUpdate=!ledger.manualCategories.contains(found.id)&&(prev!=null?prev.equals(found.category):found.category.equals("Прочее")||found.category.equals("Покупки — уточнить")||found.category.equals("Прочий доход")||knownId==null&&(found.category.equals(oldAuto)||found.category.equals(oldXlsx)));String corrected=canUpdate?cat:found.category;if(canUpdate)automatic.put(found.id,cat);
      String correctedNote=raw?note:found.note;
      if(!corrected.equals(found.category)||!correctedNote.equals(found.note))updates.add(new Ledger.Entry(found.id,found.type,found.from,found.to,corrected,correctedNote,found.date,found.amount));
     }
@@ -353,7 +371,7 @@ public class MainActivity extends Activity {
    List<Ledger.Entry> candidates=byAmount.getOrDefault(r.date+"|"+r.amount,Collections.emptyList());
    boolean uncertain=false;for(Ledger.Entry e:candidates)if(!used.contains(e.id)||!claimed.contains(e.id)&&ledger.bankRows.containsValue(e.id)){uncertain=true;break;}
    if(uncertain){ambiguous++;continue;}
-   String id=uid();pending.add(new Ledger.Entry(id,income?Ledger.IN:Ledger.OUT,income?null:account,income?account:null,cat,note,r.date,Math.abs(r.amount)));mappings.put(key,id);net+=r.amount;
+   String id=uid();pending.add(new Ledger.Entry(id,income?Ledger.IN:Ledger.OUT,income?null:account,income?account:null,cat,note,r.date,Math.abs(r.amount)));mappings.put(key,id);merchants.put(id,merchant);mccs.put(id,BankRules.mcc(r.description));automatic.put(id,cat);net+=r.amount;
   }
   if(ledger.entries.size()+pending.size()>100000){toast("Слишком много операций");return;}
   final int skipped=ambiguous;
@@ -367,7 +385,7 @@ public class MainActivity extends Activity {
    try{
     if(created!=null)ledger.put(created);
     for(Ledger.Entry e:updates)ledger.put(e);for(Ledger.Entry e:pending)ledger.put(e);
-    ledger.bankAccounts.put(statement.accountNumber,account);ledger.bankRows.putAll(mappings);save();
+    ledger.bankAccounts.put(statement.accountNumber,account);ledger.bankRows.putAll(mappings);ledger.entryMerchants.putAll(merchants);ledger.entryMcc.putAll(mccs);ledger.autoCategories.putAll(automatic);save();
     month=YearMonth.now();nav("history");toast(skipped>0?"Импорт выполнен. Неоднозначные строки пропущены: "+skipped:"Импорт выполнен");
    }catch(Exception ex){error(ex);}
   }).show();
