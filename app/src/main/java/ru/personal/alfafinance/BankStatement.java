@@ -21,7 +21,7 @@ public final class BankStatement {
   public boolean needsReview(){String s=description.toLowerCase(Locale.ROOT);return s.contains("перевод между счетами")||s.contains("между своими счетами")||s.contains("между собственными счетами")||s.contains("внесение средств через устройство")||s.contains("внесение наличных")||s.contains("снятие наличных")||s.contains("выдача наличных")||s.startsWith("категория: перевод")||s.contains("перевод клиенту");}
  }
  public final List<Row> rows=new ArrayList<>();
- public long incoming,outgoing; public Long reportedBalance,pending;
+ public String accountNumber=""; public long incoming,outgoing; public Long reportedBalance,pending;
  static String normalized(String s){return s.replace('\u00a0',' ').replace('\u202f',' ').trim();}
  static long amount(String s){String n=normalized(s).replace("RUR","").replace("RUB","").replace("₽","").replace(" ","").replace(',','.');long a=new BigDecimal(n).movePointRight(2).longValueExact();if(a < -Ledger.MAX||a>Ledger.MAX)throw new IllegalArgumentException("Сумма вне допустимого диапазона");return a;}
  static Document xml(byte[] raw)throws Exception{
@@ -54,6 +54,7 @@ public final class BankStatement {
   for(int i=0;i<sheetRows.getLength();i++){
    Map<String,String> r=cells((Element)sheetRows.item(i),shared);
    if(date==null){
+    if(find(r,"Номер счета")!=null||find(r,"Номер счёта")!=null)b.accountNumber=normalized(value(r,"C")).replace(" ","");
     if(find(r,"Валюта счета")!=null){String currency=normalized(value(r,"C"));rubles=currency.equals("RUR")||currency.equals("RUB");}
     if(find(r,"Поступления")!=null)expectedIn=amount(value(r,"N"));
     if(find(r,"Расходы")!=null)expectedOut=Math.abs(amount(value(r,"N")));
