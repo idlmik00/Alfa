@@ -31,6 +31,7 @@ public final class BankRules {
   if(has(d,"коммунальн","газпром межрегионгаз","жкх"))return "Жильё и ЖКХ";
   if(has(merchant,"pyaterochka","perekrestok","magnit","diksi","дикси","пятероч","магнит","lenta","vkusvill","kr asnoe","krasnoe&beloe","красное"))return "Продукты";
   if(has(merchant,"afisha","афиша","cinema"))return "Развлечения";
+  String mapped=MccCatalog.category(m);if(mapped!=null)return mapped;
   switch(m){
    case "5411":case "5422":case "5441":case "5451":case "5462":case "5499":return "Продукты";
    case "5811":case "5812":case "5813":case "5814":return "Кафе и рестораны";
@@ -45,7 +46,10 @@ public final class BankRules {
    case "4511":case "4722":case "7011":return "Путешествия";
    case "5818":case "7372":return "Цифровые услуги";
   }
-  if(m.matches("3\\d{3}")&&Integer.parseInt(m)>=3000&&Integer.parseInt(m)<=3299)return "Путешествия";
+  
+  if(has(d,"категория: продукты","категория: супермаркет"))return "Продукты";
+  if(has(d,"категория: транспорт"))return "Транспорт";
+  if(has(d,"категория: рестораны","категория: кафе"))return "Кафе и рестораны";
   if(has(d,"исходящий платеж qr","оплата через alfa pay"))return "Покупки — уточнить";
   return "Прочее";
  }
