@@ -257,12 +257,14 @@ public class MainActivity extends Activity {
  }
  void previewStatement(BankStatement statement,String account,Ledger.Account created){
   if(!writable())return;
-  Map<String,Deque<Ledger.Entry>> exact=new HashMap<>();Map<String,List<Ledger.Entry>> byAmount=new HashMap<>();Set<String> used=new HashSet<>(ledger.bankRows.values());
+  Map<String,Deque<Ledger.Entry>> exact=new HashMap<>();Map<String,List<Ledger.Entry>> byAmount=new HashMap<>();Set<String> used=new HashSet<>(ledger.bankRows.values());Set<String> claimed=new HashSet<>();
+  // Preclaim stable identities before attempting fallback matching (order-independent).
   for(Ledger.Entry e:ledger.entries.values()){
    long n=signedOn(e,account);if(n==0)continue;
    exact.computeIfAbsent(matchKey(e.date,n,e.note),k->new ArrayDeque<>()).add(e);
    byAmount.computeIfAbsent(e.date+"|"+n,k->new ArrayList<>()).add(e);
   }
+  Map<String,Integer> scan=new HashMap<>();for(BankStatement.Row r:statement.rows){String k=BankRules.stable(r);String mapped=ledger.bankRows.get(account+"|"+k+"|"+scan.merge(k,1,Integer::sum));if(mapped!=null)claimed.add(mapped);}
   Map<String,Integer> occurrences=new HashMap<>(),oldOccurrences=new HashMap<>();Map<String,String> mappings=new LinkedHashMap<>();
   ArrayList<Ledger.Entry> pending=new ArrayList<>(),updates=new ArrayList<>();int duplicates=0,review=0,ambiguous=0;
   long net=0;
@@ -280,7 +282,7 @@ public class MainActivity extends Activity {
    boolean income=r.amount>0;String cat=BankRules.category(r),note=BankRules.clean(r);
    if(cat.endsWith("проверить")||cat.endsWith("уточнить"))review++;
    if(found!=null){
-    duplicates++;used.add(found.id);mappings.put(key,found.id);
+    duplicates++;used.add(found.id);claimed.add(found.id);mappings.put(key,found.id);
     if(!Ledger.MOVE.equals(found.type)){
      boolean raw=normalizedNote(found.note).equals(normalizedNote(r.description));
      String oldAuto=category(r.description,income),oldXlsx=category(r.category+" "+r.description,income);
@@ -291,7 +293,7 @@ public class MainActivity extends Activity {
     continue;
    }
    List<Ledger.Entry> candidates=byAmount.getOrDefault(r.date+"|"+r.amount,Collections.emptyList());
-   boolean uncertain=false;for(Ledger.Entry e:candidates)if(!used.contains(e.id)){uncertain=true;break;}
+   boolean uncertain=false;for(Ledger.Entry e:candidates)if(!used.contains(e.id)||!claimed.contains(e.id)&&ledger.bankRows.containsValue(e.id)){uncertain=true;break;}
    if(uncertain){ambiguous++;continue;}
    String id=uid();pending.add(new Ledger.Entry(id,income?Ledger.IN:Ledger.OUT,income?null:account,income?account:null,cat,note,r.date,Math.abs(r.amount)));mappings.put(key,id);net+=r.amount;
   }
