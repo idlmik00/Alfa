@@ -168,10 +168,10 @@ public class MainActivity extends Activity {
  }
  void settings(){
   title("Профиль");menu(root,"▤","Управление счетами",null,()->nav("accounts"));
-  menu(root,"⇣","Импорт CSV",null,()->pickImportAccount());
+  menu(root,"⇣","Импорт выписки XLSX / CSV",null,()->pickImportAccount());
   menu(root,"⇡","Сохранить резервную копию",null,()->exportBackup());
   menu(root,"↻","Восстановить копию",null,()->openDocument(12));
-  LinearLayout l=col();Switch s=new Switch(this);s.setText("Защищать экран от скриншотов");s.setTextColor(WHITE);s.setChecked(secure);s.setThumbTintList(ColorStateList.valueOf(RED));s.setOnCheckedChangeListener((v,on)->{secure=on;prefs.edit().putBoolean("secure",secure).apply();security();});l.addView(s);space(l,12);label(l,"Данные хранятся на устройстве. Интернет и банковские разрешения не запрашиваются.",13,MUTED,false);card(root,l);space(root,16);label(root,"Мои финансы · v0.3",14,MUTED,false);space(root,8);label(root,"Подключение банков и нейросети — будущие этапы.",13,MUTED,false);
+  LinearLayout l=col();Switch s=new Switch(this);s.setText("Защищать экран от скриншотов");s.setTextColor(WHITE);s.setChecked(secure);s.setThumbTintList(ColorStateList.valueOf(RED));s.setOnCheckedChangeListener((v,on)->{secure=on;prefs.edit().putBoolean("secure",secure).apply();security();});l.addView(s);space(l,12);label(l,"Данные хранятся на устройстве. Интернет и банковские разрешения не запрашиваются.",13,MUTED,false);card(root,l);space(root,16);label(root,"Мои финансы · v0.4",14,MUTED,false);space(root,8);label(root,"Подключение банков и нейросети — будущие этапы.",13,MUTED,false);
  }
  LinearLayout panel(){LinearLayout l=col();l.setPadding(dp(22),dp(6),dp(22),dp(8));return l;}
  EditText field(LinearLayout l,String title,String value,boolean numeric){space(l,9);label(l,title,13,MUTED,false);EditText e=new EditText(this);e.setSingleLine(true);e.setText(value);if(numeric)e.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL|android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);l.addView(e);return e;}
@@ -237,12 +237,44 @@ public class MainActivity extends Activity {
  void pickImportAccount(){if(!writable())return;if(ledger.accounts.isEmpty()){toast("Сначала добавьте счёт для импорта");return;}ArrayList<String> ids=new ArrayList<>(ledger.accounts.keySet()),names=new ArrayList<>();for(String id:ids)names.add(accountName(id));new AlertDialog.Builder(this).setTitle("Импорт на счёт").setItems(names.toArray(new String[0]),(d,i)->{importAccount=ids.get(i);openDocument(13);}).show();}
  byte[] read(Uri uri)throws Exception{try(InputStream in=getContentResolver().openInputStream(uri);ByteArrayOutputStream buffer=new ByteArrayOutputStream()){if(in==null)throw new IOException();byte[] part=new byte[8192];int n;while((n=in.read(part))!=-1){if(buffer.size()+n>16*1024*1024)throw new IllegalArgumentException("Файл больше 16 МБ");buffer.write(part,0,n);}return buffer.toByteArray();}}
  String hash(byte[] raw)throws Exception{byte[] digest=MessageDigest.getInstance("SHA-256").digest(raw);StringBuilder b=new StringBuilder();for(byte x:digest)b.append(String.format(Locale.ROOT,"%02x",x&255));return b.toString();}
+ String matchKey(LocalDate date,long signed,String note){return date+"|"+signed+"|"+note;}
+ void importStatement(byte[] data)throws Exception{
+  if(!writable()||!ledger.accounts.containsKey(importAccount))throw new IllegalArgumentException("Выберите счёт");
+  final String account=importAccount;final BankStatement statement=BankStatement.parse(data);
+  Map<String,Integer> seen=new HashMap<>(),occurrences=new HashMap<>();for(Ledger.Entry e:ledger.entries.values()){
+   if(Ledger.IN.equals(e.type)&&account.equals(e.to))seen.merge(matchKey(e.date,e.amount,e.note),1,Integer::sum);
+   else if(Ledger.OUT.equals(e.type)&&account.equals(e.from))seen.merge(matchKey(e.date,-e.amount,e.note),1,Integer::sum);
+   else if(Ledger.MOVE.equals(e.type)&&(account.equals(e.from)||account.equals(e.to)))seen.merge(matchKey(e.date,account.equals(e.to)?e.amount:-e.amount,e.note),1,Integer::sum);
+  }
+  ArrayList<Ledger.Entry> pending=new ArrayList<>();int review=0,duplicates=0;long newNet=0;
+  for(BankStatement.Row r:statement.rows){
+   String match=matchKey(r.date,r.amount,r.description);int count=seen.getOrDefault(match,0);
+   String fp=r.fingerprint();int occurrence=occurrences.merge(fp,1,Integer::sum);String id="bank-"+hash((account+"|"+fp+"|"+occurrence).getBytes(StandardCharsets.UTF_8));
+   if(count>0){seen.put(match,count-1);duplicates++;continue;}
+   if(ledger.entries.containsKey(id)){duplicates++;continue;}
+   boolean income=r.amount>0;
+   String c=r.needsReview()?"Переводы — проверить":category(r.category+" "+r.description,income);
+   if(r.needsReview())review++;
+   pending.add(new Ledger.Entry(id,income?Ledger.IN:Ledger.OUT,income?null:account,income?account:null,c,r.description,r.date,Math.abs(r.amount)));newNet+=r.amount;
+  }
+  if(pending.isEmpty()){toast("Все операции уже найдены на выбранном счёте");return;}
+  if(ledger.entries.size()+pending.size()>100000)throw new IllegalArgumentException("Слишком много операций");
+  String msg="Счёт: "+accountName(account)+"\nСтрок выписки: "+statement.rows.size()+"\nПоступления: "+money(statement.incoming)+"\nСписания: "+money(statement.outgoing)+"\nСовпадений с историей: "+duplicates+"\nТребуют проверки переводов: "+review+"\nБаланс после добавления: "+money(ledger.balance(account)+newNet);
+  if(statement.reportedBalance!=null)msg+="\nБаланс по выписке: "+money(statement.reportedBalance);
+  if(statement.pending!=null&&statement.pending!=0)msg+="\nНеподтверждённые операции: "+money(statement.pending);
+  msg+="\n\nНачальный остаток автоматически не меняется. Переводы временно входят в поступления/списания; уточните их вручную. Совпадения ищутся по дате, сумме и описанию; изменённые записи могут не совпасть.";
+  new AlertDialog.Builder(this).setTitle("Добавить "+pending.size()+" операций?").setMessage(msg).setNegativeButton("Отмена",null).setPositiveButton("Импортировать",(d,w)->{
+   if(!writable()||!ledger.accounts.containsKey(account)||ledger.entries.size()+pending.size()>100000)return;
+   for(Ledger.Entry e:pending)if(!ledger.entries.containsKey(e.id))ledger.put(e);
+   save();month=YearMonth.from(pending.get(pending.size()-1).date);nav("history");
+  }).show();
+ }
  void importCsv(byte[] data)throws Exception{
   if(!writable()||!ledger.accounts.containsKey(importAccount))throw new IllegalArgumentException("Выберите счёт");final String account=importAccount;String key=account+":"+hash(data);if(ledger.imports.contains(key))throw new IllegalArgumentException("Этот файл уже импортирован на счёт");ArrayList<Ledger.Entry> pending=new ArrayList<>();
   try(BufferedReader r=new BufferedReader(new StringReader(new String(data,StandardCharsets.UTF_8)))){String line=r.readLine();if(line==null||!line.replace("\ufeff","").equals("date;amount;description"))throw new IllegalArgumentException("Нужен CSV с заголовком date;amount;description");while((line=r.readLine())!=null){if(line.trim().isEmpty())continue;String[] p=line.split(";",3);if(p.length!=3)throw new IllegalArgumentException("Неверная строка CSV");long a=amount(p[1]);boolean income=a>0;pending.add(new Ledger.Entry(uid(),income?Ledger.IN:Ledger.OUT,income?null:account,income?account:null,category(p[2],income),p[2],LocalDate.parse(p[0]),Math.abs(a)));if(pending.size()>20000||ledger.entries.size()+pending.size()>100000)throw new IllegalArgumentException("Слишком много операций");}}
   if(pending.isEmpty())throw new IllegalArgumentException("Файл пуст");
   new AlertDialog.Builder(this).setTitle("Импорт: "+pending.size()+" операций").setMessage("Счёт: "+accountName(account)+". Повтор точно такого же файла блокируется, но пересекающиеся выписки могут содержать дубликаты. Переводы нужно проверить вручную: этот формат не различает их.").setNegativeButton("Отмена",null).setPositiveButton("Импортировать",(d,w)->{if(!writable()||!ledger.accounts.containsKey(account)||ledger.imports.contains(key)||ledger.entries.size()+pending.size()>100000)return;for(Ledger.Entry e:pending)ledger.put(e);ledger.imports.add(key);save();nav("history");}).show();
  }
- @Override protected void onActivityResult(int rq,int rc,Intent data){super.onActivityResult(rq,rc,data);if(rc!=RESULT_OK||data==null||data.getData()==null)return;try{Uri uri=data.getData();if(rq==11){if(loadFailed)throw new IllegalArgumentException("Исходное хранилище не перезаписано; восстановите корректную копию");try(OutputStream out=getContentResolver().openOutputStream(uri)){if(out==null)throw new IOException();out.write(encode(ledger).getBytes(StandardCharsets.UTF_8));}toast("Резервная копия сохранена");}else if(rq==12){Ledger candidate=decode(new String(read(uri),StandardCharsets.UTF_8));new AlertDialog.Builder(this).setTitle("Заменить локальные данные?").setMessage("В копии "+candidate.accounts.size()+" счетов и "+candidate.entries.size()+" операций. Текущие данные будут полностью заменены.").setNegativeButton("Отмена",null).setPositiveButton("Восстановить",(d,w)->{ledger=candidate;storageLocked=false;loadFailed=false;save();nav("home");}).show();}else if(rq==13)importCsv(read(uri));}catch(Exception e){error(e);}}
+ @Override protected void onActivityResult(int rq,int rc,Intent data){super.onActivityResult(rq,rc,data);if(rc!=RESULT_OK||data==null||data.getData()==null)return;try{Uri uri=data.getData();if(rq==11){if(loadFailed)throw new IllegalArgumentException("Исходное хранилище не перезаписано; восстановите корректную копию");try(OutputStream out=getContentResolver().openOutputStream(uri)){if(out==null)throw new IOException();out.write(encode(ledger).getBytes(StandardCharsets.UTF_8));}toast("Резервная копия сохранена");}else if(rq==12){Ledger candidate=decode(new String(read(uri),StandardCharsets.UTF_8));new AlertDialog.Builder(this).setTitle("Заменить локальные данные?").setMessage("В копии "+candidate.accounts.size()+" счетов и "+candidate.entries.size()+" операций. Текущие данные будут полностью заменены.").setNegativeButton("Отмена",null).setPositiveButton("Восстановить",(d,w)->{ledger=candidate;storageLocked=false;loadFailed=false;save();nav("home");}).show();}else if(rq==13){byte[] raw=read(uri);if(raw.length>=4&&raw[0]==80&&raw[1]==75)importStatement(raw);else importCsv(raw);}}catch(Exception e){error(e);}}
  @Override public void onBackPressed(){if(!page.equals("home"))nav("home");else super.onBackPressed();}
 }
