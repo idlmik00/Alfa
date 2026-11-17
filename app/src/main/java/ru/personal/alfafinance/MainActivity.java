@@ -237,36 +237,78 @@ public class MainActivity extends Activity {
  void pickImportAccount(){if(!writable())return;if(ledger.accounts.isEmpty()){toast("Сначала добавьте счёт для импорта");return;}ArrayList<String> ids=new ArrayList<>(ledger.accounts.keySet()),names=new ArrayList<>();for(String id:ids)names.add(accountName(id));new AlertDialog.Builder(this).setTitle("Импорт на счёт").setItems(names.toArray(new String[0]),(d,i)->{importAccount=ids.get(i);openDocument(13);}).show();}
  byte[] read(Uri uri)throws Exception{try(InputStream in=getContentResolver().openInputStream(uri);ByteArrayOutputStream buffer=new ByteArrayOutputStream()){if(in==null)throw new IOException();byte[] part=new byte[8192];int n;while((n=in.read(part))!=-1){if(buffer.size()+n>16*1024*1024)throw new IllegalArgumentException("Файл больше 16 МБ");buffer.write(part,0,n);}return buffer.toByteArray();}}
  String hash(byte[] raw)throws Exception{byte[] digest=MessageDigest.getInstance("SHA-256").digest(raw);StringBuilder b=new StringBuilder();for(byte x:digest)b.append(String.format(Locale.ROOT,"%02x",x&255));return b.toString();}
- String matchKey(LocalDate date,long signed,String note){return date+"|"+signed+"|"+note;}
- void importStatement(byte[] data)throws Exception{
-  if(!writable()||!ledger.accounts.containsKey(importAccount))throw new IllegalArgumentException("Выберите счёт");
-  final String account=importAccount;final BankStatement statement=BankStatement.parse(data);
-  Map<String,Integer> seen=new HashMap<>(),occurrences=new HashMap<>();for(Ledger.Entry e:ledger.entries.values()){
-   if(Ledger.IN.equals(e.type)&&account.equals(e.to))seen.merge(matchKey(e.date,e.amount,e.note),1,Integer::sum);
-   else if(Ledger.OUT.equals(e.type)&&account.equals(e.from))seen.merge(matchKey(e.date,-e.amount,e.note),1,Integer::sum);
-   else if(Ledger.MOVE.equals(e.type)&&(account.equals(e.from)||account.equals(e.to)))seen.merge(matchKey(e.date,account.equals(e.to)?e.amount:-e.amount,e.note),1,Integer::sum);
+ String normalizedNote(String s){return s.replaceAll("\\s+"," ").trim();}
+ String matchKey(LocalDate date,long signed,String note){return date+"|"+signed+"|"+normalizedNote(note);}
+ long signedOn(Ledger.Entry e,String account){return account.equals(e.to)?e.amount:account.equals(e.from)?-e.amount:0;}
+ void selectStatement(byte[] raw)throws Exception{
+  if(!writable())return;BankStatement statement=BankStatement.parse(raw);
+  String number=statement.accountNumber;
+  if(!number.matches("\\d{20}"))throw new IllegalArgumentException("В выписке нет полного номера счёта");
+  String account=ledger.bankAccounts.get(number);
+  if(account!=null&&ledger.accounts.containsKey(account)){previewStatement(statement,account,null);return;}
+  ArrayList<String> ids=new ArrayList<>(),names=new ArrayList<>();
+  for(Ledger.Account ac:ledger.accounts.values())if(!ledger.bankAccounts.containsValue(ac.id)){ids.add(ac.id);names.add(ac.name+" · "+ac.type);}
+  names.add("+ Создать новый счёт");
+  new AlertDialog.Builder(this).setTitle("Привязать счёт •••• "+number.substring(16)).setItems(names.toArray(new String[0]),(d,i)->{
+   if(i<ids.size())previewStatement(statement,ids.get(i),null);
+   else {LinearLayout l=panel();EditText name=field(l,"Название счёта","Альфа-Банк",false);EditText opening=field(l,"Начальный остаток до периода, ₽","0",true);
+    formDialog("Новый банковский счёт",l,null,null,()->{Ledger.Account created=new Ledger.Account(uid(),value(name),"Счёт",amount(value(opening)));l.post(()->previewStatement(statement,created.id,created));});}
+  }).setNegativeButton("Отмена",null).show();
+ }
+ void previewStatement(BankStatement statement,String account,Ledger.Account created){
+  if(!writable())return;
+  Map<String,Deque<Ledger.Entry>> exact=new HashMap<>();Map<String,List<Ledger.Entry>> byAmount=new HashMap<>();Set<String> used=new HashSet<>(ledger.bankRows.values());
+  for(Ledger.Entry e:ledger.entries.values()){
+   long n=signedOn(e,account);if(n==0)continue;
+   exact.computeIfAbsent(matchKey(e.date,n,e.note),k->new ArrayDeque<>()).add(e);
+   byAmount.computeIfAbsent(e.date+"|"+n,k->new ArrayList<>()).add(e);
   }
-  ArrayList<Ledger.Entry> pending=new ArrayList<>();int review=0,duplicates=0;long newNet=0;
+  Map<String,Integer> occurrences=new HashMap<>(),oldOccurrences=new HashMap<>();Map<String,String> mappings=new LinkedHashMap<>();
+  ArrayList<Ledger.Entry> pending=new ArrayList<>(),updates=new ArrayList<>();int duplicates=0,review=0,ambiguous=0;
+  long net=0;
   for(BankStatement.Row r:statement.rows){
-   String match=matchKey(r.date,r.amount,r.description);int count=seen.getOrDefault(match,0);
-   String fp=r.fingerprint();int occurrence=occurrences.merge(fp,1,Integer::sum);String id="bank-"+hash((account+"|"+fp+"|"+occurrence).getBytes(StandardCharsets.UTF_8));
-   if(count>0){seen.put(match,count-1);duplicates++;continue;}
-   if(ledger.entries.containsKey(id)){duplicates++;continue;}
-   boolean income=r.amount>0;
-   String c=r.needsReview()?"Переводы — проверить":category(r.category+" "+r.description,income);
-   if(r.needsReview())review++;
-   pending.add(new Ledger.Entry(id,income?Ledger.IN:Ledger.OUT,income?null:account,income?account:null,c,r.description,r.date,Math.abs(r.amount)));newNet+=r.amount;
+   String stable=BankRules.stable(r);int occurrence=occurrences.merge(stable,1,Integer::sum);
+   String key=account+"|"+stable+"|"+occurrence;
+   String oldFp=r.fingerprint();int oldN=oldOccurrences.merge(oldFp,1,Integer::sum);
+   String oldId;
+   try{oldId="bank-"+hash((account+"|"+oldFp+"|"+oldN).getBytes(StandardCharsets.UTF_8));}catch(Exception ex){error(ex);return;}
+   if(ledger.bankRows.containsKey(key)){duplicates++;continue;}
+   Ledger.Entry found=ledger.entries.get(oldId);
+   if(found!=null&&used.contains(found.id))found=null;
+   if(found==null){Deque<Ledger.Entry> q=exact.get(matchKey(r.date,r.amount,r.description));while(q!=null&&!q.isEmpty()&&used.contains(q.peek().id))q.remove();if(q!=null&&!q.isEmpty())found=q.remove();}
+   if(found==null){Deque<Ledger.Entry> q=exact.get(matchKey(r.date,r.amount,BankRules.clean(r)));while(q!=null&&!q.isEmpty()&&used.contains(q.peek().id))q.remove();if(q!=null&&!q.isEmpty())found=q.remove();}
+   boolean income=r.amount>0;String cat=BankRules.category(r),note=BankRules.clean(r);
+   if(cat.endsWith("проверить")||cat.endsWith("уточнить"))review++;
+   if(found!=null){
+    duplicates++;used.add(found.id);mappings.put(key,found.id);
+    if(!Ledger.MOVE.equals(found.type)){
+     boolean raw=normalizedNote(found.note).equals(normalizedNote(r.description));
+     String oldAuto=category(r.description,income),oldXlsx=category(r.category+" "+r.description,income);
+     String corrected=(found.category.equals(oldAuto)||found.category.equals(oldXlsx)||found.category.equals("Переводы — проверить"))?cat:found.category;
+     String correctedNote=raw?note:found.note;
+     if(!corrected.equals(found.category)||!correctedNote.equals(found.note))updates.add(new Ledger.Entry(found.id,found.type,found.from,found.to,corrected,correctedNote,found.date,found.amount));
+    }
+    continue;
+   }
+   List<Ledger.Entry> candidates=byAmount.getOrDefault(r.date+"|"+r.amount,Collections.emptyList());
+   boolean uncertain=false;for(Ledger.Entry e:candidates)if(!used.contains(e.id)){uncertain=true;break;}
+   if(uncertain){ambiguous++;continue;}
+   String id=uid();pending.add(new Ledger.Entry(id,income?Ledger.IN:Ledger.OUT,income?null:account,income?account:null,cat,note,r.date,Math.abs(r.amount)));mappings.put(key,id);net+=r.amount;
   }
-  if(pending.isEmpty()){toast("Все операции уже найдены на выбранном счёте");return;}
-  if(ledger.entries.size()+pending.size()>100000)throw new IllegalArgumentException("Слишком много операций");
-  String msg="Счёт: "+accountName(account)+"\nСтрок выписки: "+statement.rows.size()+"\nПоступления: "+money(statement.incoming)+"\nСписания: "+money(statement.outgoing)+"\nСовпадений с историей: "+duplicates+"\nТребуют проверки переводов: "+review+"\nБаланс после добавления: "+money(ledger.balance(account)+newNet);
-  if(statement.reportedBalance!=null)msg+="\nБаланс по выписке: "+money(statement.reportedBalance);
-  if(statement.pending!=null&&statement.pending!=0)msg+="\nНеподтверждённые операции: "+money(statement.pending);
-  msg+="\n\nНачальный остаток автоматически не меняется. Переводы временно входят в поступления/списания; уточните их вручную. Совпадения ищутся по дате, сумме и описанию; изменённые записи могут не совпасть.";
-  new AlertDialog.Builder(this).setTitle("Добавить "+pending.size()+" операций?").setMessage(msg).setNegativeButton("Отмена",null).setPositiveButton("Импортировать",(d,w)->{
-   if(!writable()||!ledger.accounts.containsKey(account)||ledger.entries.size()+pending.size()>100000)return;
-   for(Ledger.Entry e:pending)if(!ledger.entries.containsKey(e.id))ledger.put(e);
-   save();month=YearMonth.from(pending.get(pending.size()-1).date);nav("history");
+  if(ledger.entries.size()+pending.size()>100000){toast("Слишком много операций");return;}
+  final int skipped=ambiguous;
+  String name=created==null?accountName(account):created.name;
+  String msg="Счёт: "+name+" •••• "+statement.accountNumber.substring(16)+"\nСтрок в выписке: "+statement.rows.size()+"\nНовых: "+pending.size()+"\nУже учтено: "+duplicates+"\nИсправить категории / описания: "+updates.size()+"\nНеоднозначных совпадений (не добавляем): "+ambiguous+"\nПереводы и покупки для проверки: "+review+"\nОстаток после импорта: "+money((created==null?ledger.balance(account):created.opening)+net);
+  if(statement.reportedBalance!=null)msg+="\nОстаток по выписке: "+money(statement.reportedBalance);
+  msg+="\n\nСуществующие пользовательские категории и комментарии сохраняются, кроме распознанных старых автоматических значений. Переводы требуют проверки. Начальный остаток не меняется автоматически.";
+  new AlertDialog.Builder(this).setTitle("Проверка выписки").setMessage(msg).setNegativeButton("Отмена",null).setPositiveButton("Применить",(d,w)->{
+   if(!writable())return;
+   try{
+    if(created!=null)ledger.put(created);
+    for(Ledger.Entry e:updates)ledger.put(e);for(Ledger.Entry e:pending)ledger.put(e);
+    ledger.bankAccounts.put(statement.accountNumber,account);ledger.bankRows.putAll(mappings);save();
+    month=YearMonth.now();nav("history");toast(skipped>0?"Импорт выполнен. Неоднозначные строки пропущены: "+skipped:"Импорт выполнен");
+   }catch(Exception ex){error(ex);}
   }).show();
  }
  void importCsv(byte[] data)throws Exception{
@@ -275,6 +317,6 @@ public class MainActivity extends Activity {
   if(pending.isEmpty())throw new IllegalArgumentException("Файл пуст");
   new AlertDialog.Builder(this).setTitle("Импорт: "+pending.size()+" операций").setMessage("Счёт: "+accountName(account)+". Повтор точно такого же файла блокируется, но пересекающиеся выписки могут содержать дубликаты. Переводы нужно проверить вручную: этот формат не различает их.").setNegativeButton("Отмена",null).setPositiveButton("Импортировать",(d,w)->{if(!writable()||!ledger.accounts.containsKey(account)||ledger.imports.contains(key)||ledger.entries.size()+pending.size()>100000)return;for(Ledger.Entry e:pending)ledger.put(e);ledger.imports.add(key);save();nav("history");}).show();
  }
- @Override protected void onActivityResult(int rq,int rc,Intent data){super.onActivityResult(rq,rc,data);if(rc!=RESULT_OK||data==null||data.getData()==null)return;try{Uri uri=data.getData();if(rq==11){if(loadFailed)throw new IllegalArgumentException("Исходное хранилище не перезаписано; восстановите корректную копию");try(OutputStream out=getContentResolver().openOutputStream(uri)){if(out==null)throw new IOException();out.write(encode(ledger).getBytes(StandardCharsets.UTF_8));}toast("Резервная копия сохранена");}else if(rq==12){Ledger candidate=decode(new String(read(uri),StandardCharsets.UTF_8));new AlertDialog.Builder(this).setTitle("Заменить локальные данные?").setMessage("В копии "+candidate.accounts.size()+" счетов и "+candidate.entries.size()+" операций. Текущие данные будут полностью заменены.").setNegativeButton("Отмена",null).setPositiveButton("Восстановить",(d,w)->{ledger=candidate;storageLocked=false;loadFailed=false;save();nav("home");}).show();}else if(rq==13){byte[] raw=read(uri);if(raw.length>=4&&raw[0]==80&&raw[1]==75)importStatement(raw);else importCsv(raw);}}catch(Exception e){error(e);}}
+ @Override protected void onActivityResult(int rq,int rc,Intent data){super.onActivityResult(rq,rc,data);if(rc!=RESULT_OK||data==null||data.getData()==null)return;try{Uri uri=data.getData();if(rq==11){if(loadFailed)throw new IllegalArgumentException("Исходное хранилище не перезаписано; восстановите корректную копию");try(OutputStream out=getContentResolver().openOutputStream(uri)){if(out==null)throw new IOException();out.write(encode(ledger).getBytes(StandardCharsets.UTF_8));}toast("Резервная копия сохранена");}else if(rq==12){Ledger candidate=decode(new String(read(uri),StandardCharsets.UTF_8));new AlertDialog.Builder(this).setTitle("Заменить локальные данные?").setMessage("В копии "+candidate.accounts.size()+" счетов и "+candidate.entries.size()+" операций. Текущие данные будут полностью заменены.").setNegativeButton("Отмена",null).setPositiveButton("Восстановить",(d,w)->{ledger=candidate;storageLocked=false;loadFailed=false;save();nav("home");}).show();}else if(rq==13){byte[] raw=read(uri);if(raw.length>=4&&raw[0]==80&&raw[1]==75)selectStatement(raw);else {if(!writable())return;ArrayList<String> ids=new ArrayList<>(ledger.accounts.keySet()),names=new ArrayList<>();for(String id:ids)names.add(accountName(id));if(ids.isEmpty()){toast("Сначала добавьте счёт для CSV");return;}new AlertDialog.Builder(this).setTitle("Счёт для CSV").setItems(names.toArray(new String[0]),(d,i)->{importAccount=ids.get(i);try{importCsv(raw);}catch(Exception ex){error(ex);}}).setNegativeButton("Отмена",null).show();}}}catch(Exception e){error(e);}}
  @Override public void onBackPressed(){if(!page.equals("home"))nav("home");else super.onBackPressed();}
 }
