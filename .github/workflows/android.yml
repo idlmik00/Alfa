@@ -31,10 +31,11 @@ jobs:
       - name: Check ledger calculations
         run: |
           mkdir -p /tmp/ledger-test
-          javac -encoding UTF-8 -d /tmp/ledger-test app/src/main/java/ru/personal/alfafinance/Ledger.java app/src/main/java/ru/personal/alfafinance/CategoryCatalog.java tests/LedgerSmoke.java tests/CategorySmoke.java app/src/main/java/ru/personal/alfafinance/BankStatement.java app/src/main/java/ru/personal/alfafinance/BankRules.java tests/StatementSmoke.java
+          javac -encoding UTF-8 -d /tmp/ledger-test app/src/main/java/ru/personal/alfafinance/Ledger.java app/src/main/java/ru/personal/alfafinance/CategoryCatalog.java tests/LedgerSmoke.java tests/CategorySmoke.java app/src/main/java/ru/personal/alfafinance/BankStatement.java app/src/main/java/ru/personal/alfafinance/BankRules.java tests/StatementSmoke.java app/src/main/java/ru/personal/alfafinance/MccCatalog.java app/src/main/java/ru/personal/alfafinance/ReportPeriod.java tests/AnalyticsSmoke.java
           java -cp /tmp/ledger-test ru.personal.alfafinance.LedgerSmoke
           java -cp /tmp/ledger-test ru.personal.alfafinance.CategorySmoke
           java -cp /tmp/ledger-test ru.personal.alfafinance.StatementSmoke
+          java -cp /tmp/ledger-test ru.personal.alfafinance.AnalyticsSmoke
           python3 tests/check_icons.py
       - name: Cache development signing key
         uses: actions/cache@v4
