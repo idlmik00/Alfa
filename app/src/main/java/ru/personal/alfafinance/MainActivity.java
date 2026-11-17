@@ -29,8 +29,8 @@ public class MainActivity extends Activity {
  Ledger ledger=new Ledger(); SharedPreferences prefs; LinearLayout root; YearMonth month=YearMonth.now();
  String page="home",accountFilter=null,importAccount=null;
  String reportMode="month",reportType=Ledger.OUT,detailCategory=null;LocalDate anchor=LocalDate.now(),customStart=LocalDate.now().withDayOfMonth(1),customEnd=LocalDate.now(),detailDay=null;YearMonth calendarMonth=YearMonth.now();
- boolean selecting=false;final Set<String> selectedEntries=new LinkedHashSet<>();List<Ledger.Entry> visibleEntries=new ArrayList<>();
- final int[] palette={0xffff343d,0xffe7a447,0xff6197ef,0xffa68ae6,0xff46c4a8,0xffdc78a5,0xffa4bc62,0xff65c4e0,0xfff07952,0xffa4a4ad,0xff7b73d8,0xffd6c46c}; int historyLimit=100; boolean hidden,secure,storageLocked,loadFailed;
+ boolean selecting=false;final Set<String> selectedEntries=new LinkedHashSet<>();List<Ledger.Entry> visibleEntries=new ArrayList<>();String historyQuery="";
+ final int[] palette={0xffff343d,0xffe7a447,0xff6197ef,0xffa68ae6,0xff46c4a8,0xffdc78a5,0xffa4bc62,0xff65c4e0,0xfff07952,0xffa4a4ad,0xff7b73d8,0xffd6c46c,0xffee686e,0xff8bb5f4,0xffaecbfa,0xff75a986,0xffbb93c8,0xffd99579,0xff9ea1d0,0xffe6bc96,0xff61b2aa,0xffc17a8e,0xff7fbbd4,0xffb2b96d,0xffb2a1aa,0xffce9560,0xff6796bd,0xffdd8cbb,0xff8ca5a1,0xffb4a17c,0xff8ba7e4,0xffb2cf9b}; int historyLimit=100; boolean hidden,secure,storageLocked,loadFailed;
  @Override public void onCreate(Bundle saved){
   super.onCreate(saved);prefs=getSharedPreferences("local",MODE_PRIVATE);hidden=prefs.getBoolean("hidden",false);secure=prefs.getBoolean("secure",true);
   getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);getWindow().getDecorView().setSystemUiVisibility(0);security();
@@ -100,7 +100,7 @@ public class MainActivity extends Activity {
   tab(bar,"list","Операции","history",page.equals("history"));tab(bar,"person","Профиль","settings",page.equals("settings"));outer.addView(bar,new LinearLayout.LayoutParams(-1,-2));
  }
 
- void nav(String target){page=target;accountFilter=null;historyLimit=100;selecting=false;selectedEntries.clear();detailDay=null;detailCategory=null;show();}
+ void nav(String target){page=target;historyQuery="";accountFilter=null;historyLimit=100;selecting=false;selectedEntries.clear();detailDay=null;detailCategory=null;show();}
  void show(){
   LinearLayout outer=col();outer.setBackgroundColor(BG);outer.setLayoutParams(new ViewGroup.LayoutParams(-1,-1));
   ScrollView sc=new ScrollView(this);sc.setFillViewport(true);sc.setVerticalScrollBarEnabled(false);
@@ -133,8 +133,8 @@ public class MainActivity extends Activity {
  }
  void monthControl(){LinearLayout h=horizontal();h.addView(action("‹",false,()->{month=month.minusMonths(1);historyLimit=100;show();}),new LinearLayout.LayoutParams(dp(48),dp(48)));TextView t=text(monthName(),17,WHITE,true);t.setGravity(Gravity.CENTER);weight(h,t);h.addView(action("›",false,()->{month=month.plusMonths(1);historyLimit=100;show();}),new LinearLayout.LayoutParams(dp(48),dp(48)));root.addView(h);space(root,18);}
  void history(){
-  title(accountFilter==null?"Операции":accountName(accountFilter));monthControl();if(accountFilter!=null)button(root,"Все счета",false,()->{accountFilter=null;show();});
-  List<Ledger.Entry> list=new ArrayList<>();for(Ledger.Entry e:ledger.sorted())if(YearMonth.from(e.date).equals(month)&&(accountFilter==null||accountFilter.equals(e.from)||accountFilter.equals(e.to)))list.add(e);
+  title(accountFilter==null?"Операции":accountName(accountFilter));monthControl();LinearLayout search=horizontal();search.addView(icon("search",MUTED,22),new LinearLayout.LayoutParams(dp(38),dp(42)));TextView q=action(historyQuery.isEmpty()?"Поиск по операциям":historyQuery,false,()->{LinearLayout p=panel();EditText input=field(p,"Магазин, категория, сумма или комментарий",historyQuery,false);formDialog("Поиск",p,null,null,()->{historyQuery=value(input);historyLimit=100;selectedEntries.clear();selecting=false;show();});});weight(search,q);if(!historyQuery.isEmpty())search.addView(action("×",false,()->{historyQuery="";show();}),new LinearLayout.LayoutParams(dp(42),dp(42)));root.addView(search);space(root,8);if(accountFilter!=null)button(root,"Все счета",false,()->{accountFilter=null;show();});
+  List<Ledger.Entry> list=new ArrayList<>();for(Ledger.Entry e:ledger.sorted())if(YearMonth.from(e.date).equals(month)&&(accountFilter==null||accountFilter.equals(e.from)||accountFilter.equals(e.to))&&(historyQuery.isEmpty()||BankRules.lower(e.note+" "+e.category+" "+number(e.amount)+" "+money(e.amount)).contains(BankRules.lower(historyQuery))))list.add(e);
   renderEntries(list);
   if(!selecting){space(root,12);button(root,"+  Добавить операцию",true,()->chooseType());}
  }
@@ -165,8 +165,8 @@ public class MainActivity extends Activity {
  void entryRow(Ledger.Entry e){
   boolean transfer=Ledger.MOVE.equals(e.type), income=Ledger.IN.equals(e.type);LinearLayout h=horizontal();h.setPadding(0,dp(12),0,dp(12));h.setMinimumHeight(dp(66));
   h.addView(operationIcon(e));
-  LinearLayout left=col();left.setPadding(dp(12),0,dp(6),0);label(left,transfer?"Перевод":e.category,16,WHITE,true);space(left,5);
-  String details=e.date.format(DateTimeFormatter.ofPattern("d MMM",RU))+" · "+(transfer?accountName(e.from)+" → "+accountName(e.to):accountName(income?e.to:e.from));if(!e.note.isEmpty())details+=" · "+e.note;TextView dt=text(details,12,MUTED,false);dt.setMaxLines(2);dt.setEllipsize(android.text.TextUtils.TruncateAt.END);left.addView(dt);weight(h,left);
+  LinearLayout left=col();left.setPadding(dp(12),0,dp(6),0);label(left,transfer?"Перевод":e.note.isEmpty()?e.category:e.note,16,WHITE,true);space(left,5);
+  String details=e.date.format(DateTimeFormatter.ofPattern("d MMM",RU))+" · "+(transfer?accountName(e.from)+" → "+accountName(e.to):accountName(income?e.to:e.from));if(!transfer&&!e.note.isEmpty())details+=" · "+e.category;else if(transfer&&!e.note.isEmpty())details+=" · "+e.note;TextView dt=text(details,12,MUTED,false);dt.setMaxLines(2);dt.setEllipsize(android.text.TextUtils.TruncateAt.END);left.addView(dt);weight(h,left);
   TextView sum=text(hidden?"••••":transfer?money(e.amount):signed(income?e.amount:-e.amount),16,income?WHITE:transfer?MUTED:RED,true);h.addView(sum);if(selecting){CheckBox cb=new CheckBox(this);cb.setButtonTintList(ColorStateList.valueOf(RED));cb.setChecked(selectedEntries.contains(e.id));cb.setOnClickListener(v->{if(cb.isChecked())selectedEntries.add(e.id);else selectedEntries.remove(e.id);show();});h.addView(cb);h.setOnClickListener(v->{if(!selectedEntries.add(e.id))selectedEntries.remove(e.id);show();});}else h.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("Операция").setItems(new String[]{"Изменить","Удалить"},(d,i)->{if(i==0)entryDialog(e.type,e);else if(writable())new AlertDialog.Builder(this).setMessage("Удалить операцию? Балансы и отчёты пересчитаются.").setNegativeButton("Отмена",null).setPositiveButton("Удалить",(a,b)->{ledger.entries.remove(e.id);save();show();}).show();}).show());h.setOnLongClickListener(v->{selecting=true;selectedEntries.add(e.id);show();return true;});root.addView(h);line(root);
  }
  void progress(LinearLayout l,long spent,long limit){ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setMax(1000);bar.setProgress(limit<=0?0:(int)Math.min(1000,Math.max(0,spent*1000.0/limit)));bar.setProgressTintList(ColorStateList.valueOf(RED));bar.setProgressBackgroundTintList(ColorStateList.valueOf(LINE));l.addView(bar,new LinearLayout.LayoutParams(-1,dp(10)));}
