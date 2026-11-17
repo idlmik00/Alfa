@@ -31,7 +31,7 @@ jobs:
       - name: Check ledger calculations
         run: |
           mkdir -p /tmp/ledger-test
-          javac -encoding UTF-8 -d /tmp/ledger-test app/src/main/java/ru/personal/alfafinance/Ledger.java app/src/main/java/ru/personal/alfafinance/CategoryCatalog.java tests/LedgerSmoke.java tests/CategorySmoke.java app/src/main/java/ru/personal/alfafinance/BankStatement.java tests/StatementSmoke.java
+          javac -encoding UTF-8 -d /tmp/ledger-test app/src/main/java/ru/personal/alfafinance/Ledger.java app/src/main/java/ru/personal/alfafinance/CategoryCatalog.java tests/LedgerSmoke.java tests/CategorySmoke.java app/src/main/java/ru/personal/alfafinance/BankStatement.java app/src/main/java/ru/personal/alfafinance/BankRules.java tests/StatementSmoke.java
           java -cp /tmp/ledger-test ru.personal.alfafinance.LedgerSmoke
           java -cp /tmp/ledger-test ru.personal.alfafinance.CategorySmoke
           java -cp /tmp/ledger-test ru.personal.alfafinance.StatementSmoke
