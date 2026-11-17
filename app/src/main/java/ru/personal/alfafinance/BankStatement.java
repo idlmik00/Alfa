@@ -15,13 +15,13 @@ public final class BankStatement {
  static final int MAX_XML=16*1024*1024;
  static final DateTimeFormatter DATE=DateTimeFormatter.ofPattern("dd.MM.uuuu",Locale.ROOT).withResolverStyle(ResolverStyle.STRICT);
  public static final class Row {
-  public final LocalDate date,posted; public final String code,category,description; public final long amount;
-  Row(LocalDate date,LocalDate posted,String code,String category,String description,long amount){this.date=date;this.posted=posted;this.code=code;this.category=category;this.description=description;this.amount=amount;}
+  public final LocalDate date,posted; public final boolean onHold; public final String code,category,description; public final long amount;
+  Row(LocalDate date,LocalDate posted,String code,String category,String description,long amount){this.date=date;this.posted=posted;this.onHold=posted==null;this.code=code;this.category=category;this.description=description;this.amount=amount;}
   public String fingerprint(){return date+"|"+posted+"|"+code+"|"+amount+"|"+description;}
   public boolean needsReview(){String s=description.toLowerCase(Locale.ROOT);return s.contains("перевод между счетами")||s.contains("между своими счетами")||s.contains("между собственными счетами")||s.contains("внесение средств через устройство")||s.contains("внесение наличных")||s.contains("снятие наличных")||s.contains("выдача наличных")||s.startsWith("категория: перевод")||s.contains("перевод клиенту");}
  }
  public final List<Row> rows=new ArrayList<>();
- public String accountNumber=""; public long incoming,outgoing; public Long reportedBalance,pending;
+ public String accountNumber=""; public long incoming,outgoing; public int holdCount; public long holdNet; public Long reportedBalance,pending;
  static String normalized(String s){return s.replace('\u00a0',' ').replace('\u202f',' ').trim();}
  static long amount(String s){String n=normalized(s).replace("RUR","").replace("RUB","").replace("₽","").replace(" ","").replace(',','.');long a=new BigDecimal(n).movePointRight(2).longValueExact();if(a < -Ledger.MAX||a>Ledger.MAX)throw new IllegalArgumentException("Сумма вне допустимого диапазона");return a;}
  static Document xml(byte[] raw)throws Exception{
@@ -69,7 +69,10 @@ public final class BankStatement {
    String ps=normalized(value(r,posted)),st=normalized(value(r,status));if(!st.isEmpty()&&!st.equalsIgnoreCase("Выполнен"))throw new IllegalArgumentException("Неизвестный статус операции: "+st);
    if(ps.isEmpty())throw new IllegalArgumentException("Операция без даты проводки");
    long n=amount(a);if(n==0)throw new IllegalArgumentException("Нулевая операция");
-   Row entry=new Row(LocalDate.parse(ds,DATE),LocalDate.parse(ps,DATE),value(r,code),value(r,category),value(r,description),n);
+   boolean hold="HOLD".equalsIgnoreCase(ps);
+   Row entry;
+   try{entry=new Row(LocalDate.parse(ds,DATE),hold?null:LocalDate.parse(ps,DATE),value(r,code),value(r,category),value(r,description),n);}catch(DateTimeParseException ex){throw new IllegalArgumentException("Некорректная дата в строке "+((Element)sheetRows.item(i)).getAttribute("r"));}
+   if(hold){b.holdCount++;b.holdNet=Math.addExact(b.holdNet,n);}
    b.rows.add(entry);if(n>0)b.incoming=Math.addExact(b.incoming,n);else b.outgoing=Math.addExact(b.outgoing,-n);
    if(b.rows.size()>20000)throw new IllegalArgumentException("Слишком много операций");
   }
