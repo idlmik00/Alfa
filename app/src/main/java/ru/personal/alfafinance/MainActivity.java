@@ -171,7 +171,7 @@ public class MainActivity extends Activity {
   menu(root,"⇣","Импорт выписки XLSX / CSV",null,()->openDocument(13));
   menu(root,"⇡","Сохранить резервную копию",null,()->exportBackup());
   menu(root,"↻","Восстановить копию",null,()->openDocument(12));
-  LinearLayout l=col();Switch s=new Switch(this);s.setText("Защищать экран от скриншотов");s.setTextColor(WHITE);s.setChecked(secure);s.setThumbTintList(ColorStateList.valueOf(RED));s.setOnCheckedChangeListener((v,on)->{secure=on;prefs.edit().putBoolean("secure",secure).apply();security();});l.addView(s);space(l,12);label(l,"Данные хранятся на устройстве. Интернет и банковские разрешения не запрашиваются.",13,MUTED,false);card(root,l);space(root,16);label(root,"Мои финансы · v0.5",14,MUTED,false);space(root,8);label(root,"Подключение банков и нейросети — будущие этапы.",13,MUTED,false);
+  LinearLayout l=col();Switch s=new Switch(this);s.setText("Защищать экран от скриншотов");s.setTextColor(WHITE);s.setChecked(secure);s.setThumbTintList(ColorStateList.valueOf(RED));s.setOnCheckedChangeListener((v,on)->{secure=on;prefs.edit().putBoolean("secure",secure).apply();security();});l.addView(s);space(l,12);label(l,"Данные хранятся на устройстве. Интернет и банковские разрешения не запрашиваются.",13,MUTED,false);card(root,l);space(root,16);label(root,"Мои финансы · v0.6",14,MUTED,false);space(root,8);label(root,"Подключение банков и нейросети — будущие этапы.",13,MUTED,false);
  }
  LinearLayout panel(){LinearLayout l=col();l.setPadding(dp(22),dp(6),dp(22),dp(8));return l;}
  EditText field(LinearLayout l,String title,String value,boolean numeric){space(l,9);label(l,title,13,MUTED,false);EditText e=new EditText(this);e.setSingleLine(true);e.setText(value);if(numeric)e.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL|android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);l.addView(e);return e;}
@@ -302,6 +302,7 @@ public class MainActivity extends Activity {
   String name=created==null?accountName(account):created.name;
   String msg="Счёт: "+name+" •••• "+statement.accountNumber.substring(16)+"\nСтрок в выписке: "+statement.rows.size()+"\nНовых: "+pending.size()+"\nУже учтено: "+duplicates+"\nИсправить категории / описания: "+updates.size()+"\nНеоднозначных совпадений (не добавляем): "+ambiguous+"\nПереводы и покупки для проверки: "+review+"\nОстаток после импорта: "+money((created==null?ledger.balance(account):created.opening)+net);
   if(statement.reportedBalance!=null)msg+="\nОстаток по выписке: "+money(statement.reportedBalance);
+  if(statement.holdCount>0)msg+="\nОперации в обработке (HOLD): "+statement.holdCount+" · "+signed(statement.holdNet)+"\nОни уже входят в суммы выписки и будут учтены один раз как операции по дате покупки. При изменении суммы или даты после подтверждения проверьте историю вручную.";
   msg+="\n\nСуществующие пользовательские категории и комментарии сохраняются, кроме распознанных старых автоматических значений. Переводы требуют проверки. Начальный остаток не меняется автоматически.";
   new AlertDialog.Builder(this).setTitle("Проверка выписки").setMessage(msg).setNegativeButton("Отмена",null).setPositiveButton("Применить",(d,w)->{
    if(!writable())return;
