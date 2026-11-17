@@ -26,6 +26,8 @@ public class StatementSmoke {
   if(!BankRules.category(shop).equals("Продукты")||!BankRules.clean(shop).equals("PYATEROCHKA 123")||!BankRules.category(b.rows.get(1)).equals("Переводы — проверить"))throw new AssertionError("Bank categories or clean note failed");
   BankStatement.Row transport=new BankStatement.Row(shop.date,shop.posted,"TEST","Прочие операции","Операция по карте: 000000******0000, место совершения операции: RU/CITY/BUS, MCC: 4111",-100);
   if(!BankRules.category(transport).equals("Транспорт"))throw new AssertionError("Transport category failed");
+  BankStatement.Row postedLater=new BankStatement.Row(shop.date,shop.posted.plusDays(1),shop.code,shop.category,shop.description,shop.amount);
+  if(!BankRules.stable(shop).equals(BankRules.stable(postedLater)))throw new AssertionError("Posting date must not change transaction key");
   System.out.println("Statement and category tests passed");
  }
 }
